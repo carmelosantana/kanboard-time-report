@@ -190,4 +190,30 @@ class TimeReportModelTest extends Base
         $this->assertSame('2026-W01', TimeReportModel::weekKey(strtotime('2026-01-04 20:00:00')));
         $this->assertSame('2026-W02', TimeReportModel::weekKey(strtotime('2026-01-05 00:00:00')));
     }
+
+    // ── Access guard ─────────────────────────────────────────────────────────
+
+    public function testAssertProjectAccessThrowsForInaccessibleProject(): void
+    {
+        $model = new TimeReportModel($this->container);
+        // No projects created/assigned to user 1 → getActiveProjectIds is empty.
+        $this->expectException(\Kanboard\Core\Controller\AccessForbiddenException::class);
+        $model->assertProjectAccess(4242, 1);
+    }
+
+    public function testAssertProjectAccessPassesForAccessibleProject(): void
+    {
+        // Create a project (creator becomes owner/member → appears in getActiveProjectIds).
+        $projectId = $this->container['projectModel']->create(['name' => 'Acme'], 1, true);
+        $model = new TimeReportModel($this->container);
+        $model->assertProjectAccess((int) $projectId, 1);
+        $this->assertTrue(true); // no exception
+    }
+
+    public function testReportRefusesInaccessibleProject(): void
+    {
+        $model = new TimeReportModel($this->container);
+        $this->expectException(\Kanboard\Core\Controller\AccessForbiddenException::class);
+        $model->report(4242, '2026-03-01', '2026-03-31', 'day', false, 1);
+    }
 }

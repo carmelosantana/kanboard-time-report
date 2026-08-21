@@ -3,6 +3,7 @@
 namespace Kanboard\Plugin\TimeReport\Model;
 
 use Kanboard\Core\Base;
+use Kanboard\Core\Controller\AccessForbiddenException;
 
 /**
  * TimeReportModel — computes a deduped hours union and buckets it.
@@ -169,5 +170,153 @@ class TimeReportModel extends Base
         }
 
         return ['total_hours' => (float) $total, 'breakdown' => $breakdown];
+    }
+
+    /** Throw unless $projectId is one the user may access. Always call first. */
+    public function assertProjectAccess(int $projectId, int $userId): void
+    {
+        $allowed = $this->projectPermissionModel->getActiveProjectIds($userId);
+        if (! in_array($projectId, array_map('intval', $allowed), true)) {
+            throw new AccessForbiddenException(t('You are not allowed to access this project.'));
+        }
+    }
+
+    /**
+     * Compute the full report aggregate for one project + range for $userId.
+     * AI is not attached here (ai => null); the controller adds it when enabled.
+     *
+     * @return array Report aggregate (see plan Data shapes).
+     */
+    public function report(int $projectId, string $startDate, string $endDate, string $granularity, bool $includeDetail, int $userId): array
+    {
+        $this->assertProjectAccess($projectId, $userId);
+
+        $startTs = (int) strtotime($startDate . ' 00:00:00');
+        $endTs   = (int) strtotime($endDate . ' 23:59:59');
+
+        // Source 1: normalize the user's subtask time rows → map subtask→task→project.
+        $subtaskRows = $this->gatherSubtaskRows($userId, $projectId);
+        // Source 2: completed tasks assigned to the user in this project.
+        $taskRows = $this->gatherCompletedTaskRows($projectId, $userId);
+
+        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $userId);
+
+        // Task meta for `task` granularity labels.
+        $taskMeta = [];
+        foreach ($taskRows as $t) {
+            $taskMeta[(int) $t['id']] = ['reference' => (string) ($t['reference'] ?? ''), 'title' => (string) ($t['title'] ?? '')];
+        }
+
+        $bucketed = self::bucket($contributions, $granularity, $taskMeta);
+
+        $project = $this->projectModel->getById($projectId);
+
+        $report = [
+            'project_id'     => $projectId,
+            'project_name'   => (string) ($project['name'] ?? ('#' . $projectId)),
+            'start_date'     => $startDate,
+            'end_date'       => $endDate,
+            'granularity'    => $granularity,
+            'total_hours'    => $bucketed['total_hours'],
+            'breakdown'      => $bucketed['breakdown'],
+            'include_detail' => $includeDetail,
+            'detail'         => [],
+            'ai'             => null,
+        ];
+
+        if ($includeDetail) {
+            $report['detail'] = $this->buildDetail($contributions, $taskRows, $projectId, $userId, $startTs, $endTs);
+        }
+
+        return $report;
+    }
+
+    /** Normalize the user's subtask time rows into the buildContributions shape (task_id + project_id resolved). */
+    private function gatherSubtaskRows(int $userId, int $projectId): array
+    {
+        // getUserQuery joins subtasks→tasks, exposing task_id; project_id resolved per task below.
+        $rows = $this->subtaskTimeTrackingModel->getUserQuery($userId)->findAll();
+        $normalized = [];
+        $projectByTask = [];
+        foreach ($rows as $r) {
+            $taskId = (int) $r['task_id'];
+            if (! isset($projectByTask[$taskId])) {
+                $projectByTask[$taskId] = (int) $this->taskFinderModel->getProjectId($taskId);
+            }
+            $normalized[] = [
+                'task_id'    => $taskId,
+                'project_id' => $projectByTask[$taskId],
+                'user_id'    => $userId,
+                'start'      => (int) $r['start'],
+                'end'        => (int) $r['end'],
+                'time_spent' => (float) $r['time_spent'],
+            ];
+        }
+        return $normalized;
+    }
+
+    /** Completed tasks assigned to $userId in $projectId (all statuses so completed/closed are included). */
+    private function gatherCompletedTaskRows(int $projectId, int $userId): array
+    {
+        $rows = $this->taskFinderModel->getExtendedQuery()
+            ->eq(\Kanboard\Model\TaskModel::TABLE . '.project_id', $projectId)
+            ->eq(\Kanboard\Model\TaskModel::TABLE . '.owner_id', $userId)
+            ->findAll();
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id'             => (int) $r['id'],
+                'project_id'     => (int) $r['project_id'],
+                'owner_id'       => (int) $r['owner_id'],
+                'time_spent'     => (float) $r['time_spent'],
+                'date_completed' => (int) $r['date_completed'],
+                'reference'      => (string) $r['reference'],
+                'title'          => (string) $r['title'],
+                'category_id'    => (int) $r['category_id'],
+                'category'       => (string) ($r['category_name'] ?? ''),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Completed-task detail set: tasks assigned to the user with date_completed in
+     * range, each with its hours from the contribution union (0 if none), category, tags.
+     */
+    private function buildDetail(array $contributions, array $taskRows, int $projectId, int $userId, int $startTs, int $endTs): array
+    {
+        $hoursByTask = [];
+        foreach ($contributions as $c) {
+            $hoursByTask[(int) $c['task_id']] = ($hoursByTask[(int) $c['task_id']] ?? 0.0) + (float) $c['hours'];
+        }
+
+        $completed = [];
+        foreach ($taskRows as $t) {
+            $completedTs = (int) $t['date_completed'];
+            if ($completedTs < $startTs || $completedTs > $endTs) {
+                continue;
+            }
+            $completed[(int) $t['id']] = $t;
+        }
+
+        $ids = array_keys($completed);
+        $tagsByTask = empty($ids) ? [] : $this->taskTagModel->getTagsByTaskIds($ids);
+
+        $detail = [];
+        foreach ($completed as $id => $t) {
+            $tagNames = array_map(static fn ($tag) => (string) $tag['name'], $tagsByTask[$id] ?? []);
+            $detail[] = [
+                'task_id'        => $id,
+                'reference'      => (string) $t['reference'],
+                'title'          => (string) $t['title'],
+                'hours'          => (float) ($hoursByTask[$id] ?? 0.0),
+                'date_completed' => date('Y-m-d', (int) $t['date_completed']),
+                'category'       => (string) $t['category'],
+                'tags'           => $tagNames,
+            ];
+        }
+        // Sort by completion date then reference for stable output.
+        usort($detail, static fn ($a, $b) => [$a['date_completed'], $a['reference']] <=> [$b['date_completed'], $b['reference']]);
+        return $detail;
     }
 }
