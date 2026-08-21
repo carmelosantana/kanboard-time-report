@@ -1,0 +1,25 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and publish plugin zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NAME=$(grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' plugin.json | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+          VERSION=$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' plugin.json | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match plugin.json v$VERSION"; exit 1
+          fi
+          mkdir -p /tmp/stage/"$NAME"
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'Test' --exclude '.DS_Store' ./ /tmp/stage/"$NAME"/
+          ( cd /tmp/stage && zip -qr "$GITHUB_WORKSPACE/${NAME}-${VERSION}.zip" "$NAME" )
+          gh release create "$GITHUB_REF_NAME" "${NAME}-${VERSION}.zip" \
+            --title "$GITHUB_REF_NAME" --notes "Release $GITHUB_REF_NAME"

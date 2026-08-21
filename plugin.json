@@ -1,0 +1,13 @@
+{
+    "name": "TimeReport",
+    "description": "Consultant hours reporting: pick a project and date range, choose per-day/per-week/per-task breakdowns, list completed tasks, and optionally add an AI summary. Copy as Markdown or export CSV.",
+    "version": "1.0.0",
+    "author": "Carmelo Santana",
+    "license": "MIT",
+    "homepage": "https://github.com/carmelosantana/kanboard-time-report",
+    "kanboard_version": ">=1.2.47",
+    "php_version": ">=8.4",
+    "recommends": [
+        { "plugin": "AiConnector", "min_version": "1.0.0", "reason": "adds an AI narrative summary of the completed work (the report works fully without it)" }
+    ]
+}
