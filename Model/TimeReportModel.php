@@ -42,8 +42,6 @@ class TimeReportModel extends Base
             if ($start < $startTs || $start > $endTs) {
                 continue;
             }
-            $taskId = (int) $row['task_id'];
-            $subtaskTaskIds[$taskId] = true;
 
             $timeSpent = (float) $row['time_spent'];
             if ($timeSpent > 0) {
@@ -52,6 +50,16 @@ class TimeReportModel extends Base
                 $end = (int) $row['end'];
                 $hours = $end > $start ? ($end - $start) / 3600 : 0.0;
             }
+
+            // A zero-hour entry (an instant or still-running timer) represents no logged
+            // work: it does NOT count as subtask time for dedup and adds no contribution,
+            // so it can never hide a task's real task-level time_spent fallback.
+            if ($hours <= 0) {
+                continue;
+            }
+
+            $taskId = (int) $row['task_id'];
+            $subtaskTaskIds[$taskId] = true;
 
             $contributions[] = [
                 'task_id' => $taskId,

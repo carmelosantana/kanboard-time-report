@@ -102,14 +102,25 @@ class TimeReportModelTest extends Base
         $this->assertEqualsWithDelta(3.5, $contribs[0]['hours'], 0.0001);
     }
 
-    public function testRunningSubtaskTimerContributesZeroHours(): void
+    public function testZeroDurationSubtaskEntryIsIgnored(): void
     {
+        // An instant or still-running timer (end == start, time_spent 0) logs no hours.
+        // It must NOT mark the task for dedup and must add no contribution — otherwise it
+        // would hide the task's real task-level time_spent (the bug hit in live testing).
         $subtaskRows = [
             ['task_id' => 61, 'project_id' => 5, 'user_id' => 1, 'start' => $this->ts('2026-03-08 09:00:00'), 'end' => 0, 'time_spent' => 0.0],
         ];
-        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, [], $this->startTs, $this->endTs, 5, 1);
-        $this->assertTrue($subtaskTaskIds[61]); // still marks the task as having an in-range entry
-        $this->assertSame(0.0, $contribs[0]['hours']);
+        // Same task ALSO has real task-level time_spent, completed in range, owned by the user.
+        $taskRows = [
+            ['id' => 61, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 7.17, 'date_completed' => $this->ts('2026-03-20 17:00:00')],
+        ];
+        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+
+        $this->assertArrayNotHasKey(61, $subtaskTaskIds, 'a zero-hour subtask entry must not mark the task for dedup');
+        $this->assertCount(1, $contribs, 'only the task-level fallback should contribute');
+        $this->assertSame(61, $contribs[0]['task_id']);
+        $this->assertSame(7.17, $contribs[0]['hours'], 'task-level time_spent must count when only zero-hour subtask entries exist');
+        $this->assertSame('2026-03-20', $contribs[0]['date']);
     }
 
     // ── Bucketing ────────────────────────────────────────────────────────────
