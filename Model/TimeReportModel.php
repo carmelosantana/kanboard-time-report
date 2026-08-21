@@ -51,10 +51,11 @@ class TimeReportModel extends Base
                 $hours = $end > $start ? ($end - $start) / 3600 : 0.0;
             }
 
-            // A zero-hour entry (an instant or still-running timer) represents no logged
-            // work: it does NOT count as subtask time for dedup and adds no contribution,
-            // so it can never hide a task's real task-level time_spent fallback.
-            if ($hours <= 0) {
+            // An entry that rounds to 0.00h at the report's own 2-dp precision represents no
+            // logged work — a still-running timer, or an instant start/stop toggle that spans
+            // only a second or two. It does NOT count as subtask time for dedup and adds no
+            // contribution, so it can never hide a task's real task-level time_spent fallback.
+            if (round($hours, 2) <= 0) {
                 continue;
             }
 

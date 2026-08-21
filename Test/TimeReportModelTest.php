@@ -123,6 +123,44 @@ class TimeReportModelTest extends Base
         $this->assertSame('2026-03-20', $contribs[0]['date']);
     }
 
+    public function testInstantTimerToggleBelowPrecisionIsIgnored(): void
+    {
+        // Real-world case: a timer started and stopped ~1 second later. end-start = 1s =
+        // 0.000277h, which is > 0 but rounds to 0.00 at the report's 2-dp precision. Two such
+        // toggles must NOT mark the task or hide its real 7.17h task-level time_spent.
+        $t = $this->ts('2026-03-08 09:00:00');
+        $subtaskRows = [
+            ['task_id' => 63, 'project_id' => 5, 'user_id' => 1, 'start' => $t,     'end' => $t + 1, 'time_spent' => 0.0],
+            ['task_id' => 63, 'project_id' => 5, 'user_id' => 1, 'start' => $t + 1, 'end' => $t + 2, 'time_spent' => 0.0],
+        ];
+        $taskRows = [
+            ['id' => 63, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 7.17, 'date_completed' => $this->ts('2026-03-20 17:00:00')],
+        ];
+        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+
+        $this->assertArrayNotHasKey(63, $subtaskTaskIds, 'sub-precision timer toggles must not mark the task for dedup');
+        $this->assertCount(1, $contribs);
+        $this->assertSame(7.17, $contribs[0]['hours'], 'the real task-level time must survive instant timer toggles');
+    }
+
+    public function testGenuineShortSubtaskEntryStillCounts(): void
+    {
+        // A real entry at/above the report's precision (0.25h = 15 min) must still count and
+        // still dedup the task-level fallback — the noise filter must not swallow real work.
+        $t = $this->ts('2026-03-08 09:00:00');
+        $subtaskRows = [
+            ['task_id' => 70, 'project_id' => 5, 'user_id' => 1, 'start' => $t, 'end' => $t + 900, 'time_spent' => 0.0], // 15 min
+        ];
+        $taskRows = [
+            ['id' => 70, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 9.0, 'date_completed' => $this->ts('2026-03-20 17:00:00')],
+        ];
+        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+
+        $this->assertTrue($subtaskTaskIds[70], 'a real 15-minute entry counts as subtask time and dedups the fallback');
+        $this->assertCount(1, $contribs);
+        $this->assertEqualsWithDelta(0.25, $contribs[0]['hours'], 0.0001, 'the 15-minute subtask entry (not the 9.0 task-level) is what counts');
+    }
+
     // ── Bucketing ────────────────────────────────────────────────────────────
 
     private function contrib(int $taskId, float $hours, string $date): array
