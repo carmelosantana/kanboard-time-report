@@ -52,7 +52,7 @@ class TimeReportHelper extends Base
             }
         }
 
-        if (! empty($report['ai']) && is_array($report['ai'])) {
+        if (! empty($report['ai']) && is_array($report['ai']) && empty($report['ai']['error']) && (trim((string)($report['ai']['summary'] ?? '')) !== '' || !empty($report['ai']['highlights']))) {
             $lines[] = '';
             $lines[] = '## Summary';
             $lines[] = '';

@@ -91,4 +91,12 @@ class TimeReportHelperTest extends Base
             $this->helper()->csvFilename('Acme Website', '2026-03-01', '2026-03-31')
         );
     }
+
+    public function testMarkdownOmitsSummaryOnAiError(): void
+    {
+        $report = $this->sampleReport();
+        $report['ai'] = ['summary' => '', 'highlights' => [], 'error' => 'The AI summary could not be generated.'];
+        $md = $this->helper()->toMarkdown($report);
+        $this->assertStringNotContainsString('## Summary', $md);
+    }
 }
