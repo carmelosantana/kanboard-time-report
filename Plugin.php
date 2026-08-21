@@ -28,7 +28,8 @@ class Plugin extends Base
             return new AiSummaryModel($c);
         };
 
-        // ── Template helper: $this->helper->timeReport()->formatHours(...) ─────
+        // ── Template helper: $this->helper->timeReport->formatHours(...) ──────
+        // (property access — Kanboard's Helper exposes registered helpers via __get, not __call)
         $this->helper->register('timeReport', TimeReportHelper::class);
 
         // ── AI availability gate (single source of truth) ─────────────────────
