@@ -83,7 +83,7 @@ class TimeReportController extends BaseController
     }
 
     /** Shared: read/validate params, compute the report, attach AI only when the gate is open. */
-    private function buildReportFromRequest(): array
+    protected function buildReportFromRequest(): array
     {
         $userId      = $this->userSession->getId();
         $values      = $this->request->getValues();
@@ -92,22 +92,26 @@ class TimeReportController extends BaseController
         $endDate     = $this->validDate($values['end_date'] ?? '', date('Y-m-d'));
         $granularity = in_array($values['granularity'] ?? '', self::GRANULARITIES, true) ? $values['granularity'] : 'day';
         $includeDetail = ! empty($values['include_detail']);
-        $wantsAi       = ! empty($values['include_ai_summary']);
+        $wantsAi       = ! empty($values['include_ai_summary']) && $this->isAiEnabled();
 
+        // Mine ONCE. Compute the detail set when the user asked to display it OR the AI
+        // summary needs it, so the AI branch never re-runs report() a second time.
         // Model access-guards the project (assertProjectAccess) before any mining.
-        $report = $this->timeReportModel->report($projectId, $startDate, $endDate, $granularity, $includeDetail, $userId);
+        $needDetail = $includeDetail || $wantsAi;
+        $report = $this->timeReportModel->report($projectId, $startDate, $endDate, $granularity, $needDetail, $userId);
 
-        if ($wantsAi && $this->isAiEnabled()) {
-            $detail = ! empty($report['detail'])
-                ? $report['detail']
-                : $this->timeReportModel->report($projectId, $startDate, $endDate, $granularity, true, $userId)['detail'];
+        if ($wantsAi) {
             $profileId = $this->validProfileId($values['profile_id'] ?? null);
             try {
-                $report['ai'] = $this->aiSummaryModel->summarize($detail, $profileId);
+                $report['ai'] = $this->aiSummaryModel->summarize($report['detail'], $profileId);
             } catch (\Throwable $e) {
                 $report['ai'] = ['summary' => '', 'highlights' => [], 'error' => t('The AI summary could not be generated.')];
             }
         }
+
+        // Detail is displayed/exported only per the user's explicit choice, even when it
+        // was computed solely to feed the AI summary above.
+        $report['include_detail'] = $includeDetail;
 
         return $report;
     }

@@ -63,4 +63,68 @@ class TimeReportControllerTest extends Base
         $report = $controller->renderProbe($projectId);
         $this->assertNull($report['ai'], 'AI must not be attached when the gate is closed');
     }
+
+    /**
+     * Behavioral: when the AI summary is wanted (gate open) but the user did NOT ask to
+     * display the completed-task detail, the report must be mined EXACTLY ONCE (no second
+     * report() call just to fetch detail for the AI), and the detail-display intent must
+     * reflect the user's choice (false) even though detail was computed to feed the AI.
+     */
+    public function testAiWantedWithoutDetailMinesReportOnce(): void
+    {
+        // Fake model that counts report() invocations and returns a minimal aggregate.
+        $fakeModel = new class($this->container) extends \Kanboard\Plugin\TimeReport\Model\TimeReportModel {
+            public int $calls = 0;
+            public function report(int $projectId, string $startDate, string $endDate, string $granularity, bool $includeDetail, int $userId): array
+            {
+                $this->calls++;
+                return [
+                    'project_id'     => $projectId,
+                    'project_name'   => 'X',
+                    'start_date'     => $startDate,
+                    'end_date'       => $endDate,
+                    'granularity'    => $granularity,
+                    'total_hours'    => 0.0,
+                    'breakdown'      => [],
+                    'include_detail' => $includeDetail,
+                    'detail'         => [],
+                    'ai'             => null,
+                ];
+            }
+        };
+        $this->container['timeReportModel'] = function ($c) use ($fakeModel) { return $fakeModel; };
+
+        // Fake AI model — returns a canned summary, no network.
+        $fakeAi = new class($this->container) extends \Kanboard\Plugin\TimeReport\Model\AiSummaryModel {
+            public function summarize(array $detailTasks, ?string $profileId = null): array
+            {
+                return ['summary' => 'canned', 'highlights' => []];
+            }
+        };
+        $this->container['aiSummaryModel'] = function ($c) use ($fakeAi) { return $fakeAi; };
+
+        // Request: AI wanted, include_detail NOT set, no profile_id (so validProfileId
+        // short-circuits). getValues() only returns POST when a valid csrf_token is
+        // present, so mint one from the same container token service the request uses.
+        $csrf = $this->container['token']->getCSRFToken();
+        $this->container['request'] = new \Kanboard\Core\Http\Request($this->container, [], [], [
+            'csrf_token'         => $csrf,
+            'project_id'         => '5',
+            'start_date'         => '2026-03-01',
+            'end_date'           => '2026-03-31',
+            'granularity'        => 'day',
+            'include_ai_summary' => '1',
+        ]);
+
+        $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
+            protected function isAiEnabled(): bool { return true; }
+            public function buildPublic(): array { return $this->buildReportFromRequest(); }
+        };
+
+        $report = $controller->buildPublic();
+
+        $this->assertSame(1, $fakeModel->calls, 'report() must be mined exactly once even when the AI summary needs detail');
+        $this->assertSame('canned', $report['ai']['summary'], 'AI summary must be attached when wanted and the gate is open');
+        $this->assertFalse($report['include_detail'], 'display intent preserved: user did not request the detail listing');
+    }
 }
