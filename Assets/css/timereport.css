@@ -1,0 +1,10 @@
+.tr-hidden { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.tr-summary { margin: 1em 0; }
+.tr-actions { display: flex; gap: 0.5em; align-items: center; margin-top: 0.5em; }
+.tr-inline-form { display: inline; margin: 0; }
+.tr-breakdown .tr-num, .tr-detail .tr-num { text-align: right; }
+.tr-toggles { margin: 1em 0; }
+.tr-ai-note { color: #888; font-size: 0.9em; margin: 0.25em 0; }
+.tr-ai-off { font-style: italic; }
+.tr-ai { margin-top: 1.5em; padding: 0.75em 1em; border-left: 3px solid #4b9fd5; background: rgba(75,159,213,0.06); }
+.tr-ai-error { color: #b94a48; }

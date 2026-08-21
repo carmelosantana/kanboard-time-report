@@ -1,0 +1,52 @@
+<div class="page-header">
+    <h2><?= t('Time Report') ?> — <?= $this->text->e($report['project_name']) ?></h2>
+</div>
+
+<div class="tr-summary">
+    <p>
+        <strong><?= t('Range') ?>:</strong> <?= $this->text->e($report['start_date']) ?> → <?= $this->text->e($report['end_date']) ?>
+        &nbsp;·&nbsp;
+        <strong><?= t('Total hours') ?>:</strong> <?= $this->text->e($this->helper->timeReport()->formatHours((float) $report['total_hours'])) ?>
+    </p>
+    <div class="tr-actions">
+        <button type="button" class="btn" data-tr-copy><?= t('Copy as Markdown') ?></button>
+        <form method="post" class="tr-inline-form" action="<?= $this->url->href('TimeReportController', 'exportCsv', ['plugin' => 'TimeReport']) ?>">
+            <?= $this->form->csrf() ?>
+            <input type="hidden" name="project_id" value="<?= (int) $report['project_id'] ?>">
+            <input type="hidden" name="start_date" value="<?= $this->text->e($report['start_date']) ?>">
+            <input type="hidden" name="end_date" value="<?= $this->text->e($report['end_date']) ?>">
+            <input type="hidden" name="granularity" value="<?= $this->text->e($report['granularity']) ?>">
+            <input type="hidden" name="include_detail" value="<?= ! empty($report['include_detail']) ? 1 : 0 ?>">
+            <button type="submit" class="btn"><?= t('Export CSV') ?></button>
+        </form>
+    </div>
+</div>
+
+<?= $this->render('TimeReport:report/_breakdown', ['report' => $report]) ?>
+
+<?php if (! empty($report['include_detail']) && ! empty($report['detail'])): ?>
+    <?= $this->render('TimeReport:report/_detail', ['report' => $report]) ?>
+<?php endif ?>
+
+<?php if (! empty($report['ai']) && is_array($report['ai'])): ?>
+    <div class="tr-ai">
+        <h3><?= t('Summary') ?></h3>
+        <?php if (! empty($report['ai']['error'])): ?>
+            <p class="tr-ai-error"><?= $this->text->e($report['ai']['error']) ?></p>
+        <?php else: ?>
+            <p><?= $this->text->e($report['ai']['summary']) ?></p>
+            <?php if (! empty($report['ai']['highlights'])): ?>
+                <ul>
+                    <?php foreach ($report['ai']['highlights'] as $h): ?>
+                        <li><?= $this->text->e($h) ?></li>
+                    <?php endforeach ?>
+                </ul>
+            <?php endif ?>
+        <?php endif ?>
+        <p class="tr-ai-note"><?= t('AI-proposed — review before sharing.') ?></p>
+    </div>
+<?php endif ?>
+
+<textarea id="tr-markdown" class="tr-hidden" readonly aria-hidden="true"><?= $this->text->e($markdown) ?></textarea>
+
+<p><a href="<?= $this->url->href('TimeReportController', 'index', ['plugin' => 'TimeReport']) ?>">&larr; <?= t('New report') ?></a></p>
