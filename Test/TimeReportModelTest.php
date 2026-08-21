@@ -111,4 +111,83 @@ class TimeReportModelTest extends Base
         $this->assertTrue($subtaskTaskIds[61]); // still marks the task as having an in-range entry
         $this->assertSame(0.0, $contribs[0]['hours']);
     }
+
+    // ── Bucketing ────────────────────────────────────────────────────────────
+
+    private function contrib(int $taskId, float $hours, string $date): array
+    {
+        return ['task_id' => $taskId, 'hours' => $hours, 'date' => $date];
+    }
+
+    public function testBucketByDaySumsPerCalendarDay(): void
+    {
+        $c = [
+            $this->contrib(1, 2.0, '2026-03-10'),
+            $this->contrib(2, 1.5, '2026-03-10'),
+            $this->contrib(1, 3.0, '2026-03-11'),
+        ];
+        $out = TimeReportModel::bucket($c, 'day');
+        $this->assertEqualsWithDelta(6.5, $out['total_hours'], 0.0001);
+        $this->assertCount(2, $out['breakdown']);
+        $this->assertSame('2026-03-10', $out['breakdown'][0]['key']);
+        $this->assertEqualsWithDelta(3.5, $out['breakdown'][0]['hours'], 0.0001);
+        $this->assertSame(2, $out['breakdown'][0]['task_count']); // tasks 1 and 2
+        $this->assertSame('2026-03-11', $out['breakdown'][1]['key']);
+        $this->assertSame(1, $out['breakdown'][1]['task_count']);
+    }
+
+    public function testBucketByTotalSingleRow(): void
+    {
+        $c = [$this->contrib(1, 2.0, '2026-03-10'), $this->contrib(1, 3.0, '2026-03-11'), $this->contrib(2, 1.0, '2026-03-12')];
+        $out = TimeReportModel::bucket($c, 'total');
+        $this->assertCount(1, $out['breakdown']);
+        $this->assertSame('total', $out['breakdown'][0]['key']);
+        $this->assertEqualsWithDelta(6.0, $out['breakdown'][0]['hours'], 0.0001);
+        $this->assertSame(2, $out['breakdown'][0]['task_count']);
+    }
+
+    public function testBucketByTaskOneRowPerTaskWithLabel(): void
+    {
+        $c = [$this->contrib(7, 2.0, '2026-03-10'), $this->contrib(7, 1.0, '2026-03-11'), $this->contrib(9, 4.0, '2026-03-12')];
+        $meta = [7 => ['reference' => 'ABC-7', 'title' => 'Build API'], 9 => ['reference' => 'ABC-9', 'title' => 'Write docs']];
+        $out = TimeReportModel::bucket($c, 'task', $meta);
+        $this->assertCount(2, $out['breakdown']);
+        // sorted by reference: ABC-7 before ABC-9
+        $this->assertSame('7', $out['breakdown'][0]['key']);
+        $this->assertStringContainsString('Build API', $out['breakdown'][0]['label']);
+        $this->assertEqualsWithDelta(3.0, $out['breakdown'][0]['hours'], 0.0001);
+        $this->assertSame(1, $out['breakdown'][0]['task_count']);
+    }
+
+    public function testBucketByTaskFallsBackToHashIdLabelWithoutMeta(): void
+    {
+        $c = [$this->contrib(7, 2.0, '2026-03-10')];
+        $out = TimeReportModel::bucket($c, 'task');
+        $this->assertSame('#7', $out['breakdown'][0]['label']);
+    }
+
+    /** ISO-week boundary: 2025-12-29 (Mon) .. 2026-01-04 (Sun) is ISO week 2026-W01. */
+    public function testBucketByWeekIsoBoundary(): void
+    {
+        $c = [
+            $this->contrib(1, 2.0, '2025-12-29'), // Mon of ISO 2026-W01
+            $this->contrib(2, 1.0, '2026-01-04'), // Sun of ISO 2026-W01
+            $this->contrib(3, 5.0, '2026-01-05'), // Mon of ISO 2026-W02
+        ];
+        $out = TimeReportModel::bucket($c, 'week');
+        $this->assertCount(2, $out['breakdown']);
+        $this->assertSame('2026-W01', $out['breakdown'][0]['key']);
+        $this->assertEqualsWithDelta(3.0, $out['breakdown'][0]['hours'], 0.0001);
+        $this->assertSame(2, $out['breakdown'][0]['task_count']);
+        $this->assertSame('2026-W02', $out['breakdown'][1]['key']);
+        $this->assertStringContainsString('Dec 29', $out['breakdown'][0]['label']);
+        $this->assertStringContainsString('Jan 04', $out['breakdown'][0]['label']);
+    }
+
+    public function testWeekKeyHelperOnIsoBoundary(): void
+    {
+        $this->assertSame('2026-W01', TimeReportModel::weekKey(strtotime('2025-12-29 08:00:00')));
+        $this->assertSame('2026-W01', TimeReportModel::weekKey(strtotime('2026-01-04 20:00:00')));
+        $this->assertSame('2026-W02', TimeReportModel::weekKey(strtotime('2026-01-05 00:00:00')));
+    }
 }

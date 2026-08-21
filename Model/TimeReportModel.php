@@ -85,4 +85,89 @@ class TimeReportModel extends Base
 
         return [$contributions, $subtaskTaskIds];
     }
+
+    public static function dayKey(int $ts): string
+    {
+        return date('Y-m-d', $ts);
+    }
+
+    /** ISO-8601 week key: <ISO-year>-W<2-digit ISO week>. */
+    public static function weekKey(int $ts): string
+    {
+        return date('o', $ts) . '-W' . date('W', $ts);
+    }
+
+    /** "Mon d – Sun d" span for the ISO week containing $ts. */
+    public static function weekLabel(int $ts): string
+    {
+        $monday = strtotime('monday this week', $ts);
+        $sunday = strtotime('sunday this week', $ts);
+        return date('M d', $monday) . ' – ' . date('M d', $sunday);
+    }
+
+    /**
+     * Sum contributions into breakdown rows per the chosen granularity.
+     *
+     * @param  list<array{task_id:int,hours:float,date:string}> $contributions
+     * @param  array<int,array{reference:string,title:string}>  $taskMeta
+     * @return array{total_hours:float, breakdown: list<array{key:string,label:string,hours:float,task_count:int}>}
+     */
+    public static function bucket(array $contributions, string $granularity, array $taskMeta = []): array
+    {
+        $buckets = []; // key => ['label'=>, 'hours'=>, 'tasks'=>[id=>true], 'sort'=>]
+        $total = 0.0;
+
+        foreach ($contributions as $c) {
+            $hours  = (float) $c['hours'];
+            $taskId = (int) $c['task_id'];
+            $total += $hours;
+            $ts = strtotime($c['date'] . ' 12:00:00');
+
+            switch ($granularity) {
+                case 'week':
+                    $key   = self::weekKey($ts);
+                    $label = self::weekLabel($ts);
+                    $sort  = $key;
+                    break;
+                case 'task':
+                    $key   = (string) $taskId;
+                    $ref   = $taskMeta[$taskId]['reference'] ?? '';
+                    $title = $taskMeta[$taskId]['title'] ?? '';
+                    $label = $title !== '' ? ('#' . $taskId . ' ' . $title) : ('#' . $taskId);
+                    $sort  = ($ref !== '' ? $ref : str_pad((string) $taskId, 12, '0', STR_PAD_LEFT));
+                    break;
+                case 'total':
+                    $key   = 'total';
+                    $label = t('Total');
+                    $sort  = 'total';
+                    break;
+                case 'day':
+                default:
+                    $key   = self::dayKey($ts);
+                    $label = $key;
+                    $sort  = $key;
+                    break;
+            }
+
+            if (! isset($buckets[$key])) {
+                $buckets[$key] = ['label' => $label, 'hours' => 0.0, 'tasks' => [], 'sort' => $sort];
+            }
+            $buckets[$key]['hours'] += $hours;
+            $buckets[$key]['tasks'][$taskId] = true;
+        }
+
+        uasort($buckets, static fn ($a, $b) => strcmp((string) $a['sort'], (string) $b['sort']));
+
+        $breakdown = [];
+        foreach ($buckets as $key => $b) {
+            $breakdown[] = [
+                'key'        => (string) $key,
+                'label'      => $b['label'],
+                'hours'      => (float) $b['hours'],
+                'task_count' => count($b['tasks']),
+            ];
+        }
+
+        return ['total_hours' => (float) $total, 'breakdown' => $breakdown];
+    }
 }
