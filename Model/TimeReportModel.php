@@ -225,7 +225,7 @@ class TimeReportModel extends Base
         ];
 
         if ($includeDetail) {
-            $report['detail'] = $this->buildDetail($contributions, $taskRows, $projectId, $userId, $startTs, $endTs);
+            $report['detail'] = $this->buildDetail($contributions, $taskRows, $startTs, $endTs);
         }
 
         return $report;
@@ -234,18 +234,14 @@ class TimeReportModel extends Base
     /** Normalize the user's subtask time rows into the buildContributions shape (task_id + project_id resolved). */
     private function gatherSubtaskRows(int $userId, int $projectId): array
     {
-        // getUserQuery joins subtasks→tasks, exposing task_id; project_id resolved per task below.
+        // getUserQuery joins subtasks→tasks, exposing task_id and project_id.
         $rows = $this->subtaskTimeTrackingModel->getUserQuery($userId)->findAll();
         $normalized = [];
-        $projectByTask = [];
         foreach ($rows as $r) {
             $taskId = (int) $r['task_id'];
-            if (! isset($projectByTask[$taskId])) {
-                $projectByTask[$taskId] = (int) $this->taskFinderModel->getProjectId($taskId);
-            }
             $normalized[] = [
                 'task_id'    => $taskId,
-                'project_id' => $projectByTask[$taskId],
+                'project_id' => (int) $r['project_id'],
                 'user_id'    => $userId,
                 'start'      => (int) $r['start'],
                 'end'        => (int) $r['end'],
@@ -283,7 +279,7 @@ class TimeReportModel extends Base
      * Completed-task detail set: tasks assigned to the user with date_completed in
      * range, each with its hours from the contribution union (0 if none), category, tags.
      */
-    private function buildDetail(array $contributions, array $taskRows, int $projectId, int $userId, int $startTs, int $endTs): array
+    private function buildDetail(array $contributions, array $taskRows, int $startTs, int $endTs): array
     {
         $hoursByTask = [];
         foreach ($contributions as $c) {
