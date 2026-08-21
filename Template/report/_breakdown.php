@@ -11,7 +11,7 @@
         <?php foreach ($report['breakdown'] as $row): ?>
             <tr>
                 <td><?= $this->text->e($row['label']) ?></td>
-                <td class="tr-num"><?= $this->text->e($this->helper->timeReport()->formatHours((float) $row['hours'])) ?></td>
+                <td class="tr-num"><?= $this->text->e($this->helper->timeReport->formatHours((float) $row['hours'])) ?></td>
                 <?php if (! $isTask): ?><td class="tr-num"><?= (int) $row['task_count'] ?></td><?php endif ?>
             </tr>
         <?php endforeach ?>

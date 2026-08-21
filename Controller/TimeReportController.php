@@ -49,7 +49,7 @@ class TimeReportController extends BaseController
         $this->checkCSRFForm();
         $report = $this->buildReportFromRequest();
 
-        $markdown = $this->helper->timeReport()->toMarkdown($report);
+        $markdown = $this->helper->timeReport->toMarkdown($report);
 
         $this->response->html($this->helper->layout->app('TimeReport:report/show', [
             'title'      => t('Time Report'),
@@ -65,7 +65,7 @@ class TimeReportController extends BaseController
         $this->checkCSRFForm();
         $report = $this->buildReportFromRequest();
 
-        $helper = $this->helper->timeReport();
+        $helper = $this->helper->timeReport;
         $csv = $helper->toCsv($report);
         $filename = $helper->csvFilename($report['project_name'], $report['start_date'], $report['end_date']);
 

@@ -11,7 +11,7 @@
             <tr>
                 <td><?= $this->text->e($d['reference']) ?></td>
                 <td><?= $this->text->e($d['title']) ?></td>
-                <td class="tr-num"><?= $this->text->e($this->helper->timeReport()->formatHours((float) $d['hours'])) ?></td>
+                <td class="tr-num"><?= $this->text->e($this->helper->timeReport->formatHours((float) $d['hours'])) ?></td>
                 <td><?= $this->text->e($d['date_completed']) ?></td>
                 <td><?= $this->text->e($d['category']) ?></td>
                 <td><?= $this->text->e(implode(', ', $d['tags'])) ?></td>

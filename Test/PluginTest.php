@@ -54,4 +54,26 @@ class PluginTest extends Base
         $plugin->initialize();
         $this->assertTrue($plugin->isAiEnabled());
     }
+
+    /**
+     * Regression: the TimeReportHelper must be reachable through the framework Helper
+     * container as a PROPERTY ($this->helper->timeReport->method()), which is how the
+     * controller and templates call it. Kanboard's Helper exposes registered helpers via
+     * __get only — there is no __call — so a method-style access ($this->helper->timeReport())
+     * fatals at runtime even though the helper's own unit tests (which instantiate it
+     * directly) stay green. This locks the registration + property-access contract.
+     */
+    public function testTimeReportHelperRegisteredAndCallableAsProperty(): void
+    {
+        $plugin = new Plugin($this->container);
+        $plugin->initialize();
+
+        $helper = $this->container['helper']->timeReport; // property access, exactly as the views do
+        $this->assertInstanceOf(
+            \Kanboard\Plugin\TimeReport\Helper\TimeReportHelper::class,
+            $helper,
+            'timeReport helper must be registered on the Helper container'
+        );
+        $this->assertSame('1.50', $helper->formatHours(1.5), 'helper methods must be callable through the container');
+    }
 }

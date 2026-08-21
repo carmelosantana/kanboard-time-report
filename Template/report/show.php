@@ -6,7 +6,7 @@
     <p>
         <strong><?= t('Range') ?>:</strong> <?= $this->text->e($report['start_date']) ?> → <?= $this->text->e($report['end_date']) ?>
         &nbsp;·&nbsp;
-        <strong><?= t('Total hours') ?>:</strong> <?= $this->text->e($this->helper->timeReport()->formatHours((float) $report['total_hours'])) ?>
+        <strong><?= t('Total hours') ?>:</strong> <?= $this->text->e($this->helper->timeReport->formatHours((float) $report['total_hours'])) ?>
     </p>
     <div class="tr-actions">
         <button type="button" class="btn" data-tr-copy><?= t('Copy as Markdown') ?></button>
