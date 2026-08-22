@@ -181,6 +181,60 @@ class TimeReportModel extends Base
         return ['total_hours' => (float) $total, 'breakdown' => $breakdown];
     }
 
+    /**
+     * Detect subtask time recorded on the subtask but not date-tracked (so it is not
+     * counted in the report). Untracked = recorded time_spent − the user's tracked hours
+     * for that subtask (clamped >= 0), flagged when >= 0.01h. Grouped per task.
+     *
+     * @param  list<array{subtask_id:int,task_id:int,time_spent:float}> $subtaskRecords
+     * @param  array<int,float>                                         $trackedBySubtask
+     * @param  array<int,array{reference:string,title:string}>          $taskMeta
+     * @return array{task_count:int, subtask_count:int, total_hours:float, tasks: list<array{task_id:int,reference:string,title:string,hours:float}>}
+     */
+    public static function findUntrackedSubtaskTime(array $subtaskRecords, array $trackedBySubtask, array $taskMeta): array
+    {
+        $byTask = [];       // task_id => hours (untracked sum)
+        $subtaskCount = 0;
+        $total = 0.0;
+
+        foreach ($subtaskRecords as $rec) {
+            $recorded  = round((float) $rec['time_spent'], 2);
+            $tracked   = round((float) ($trackedBySubtask[(int) $rec['subtask_id']] ?? 0.0), 2);
+            $untracked = round($recorded - $tracked, 2);
+            if ($untracked < 0.01) {
+                continue;
+            }
+            $taskId = (int) $rec['task_id'];
+            $byTask[$taskId] = round(($byTask[$taskId] ?? 0.0) + $untracked, 2);
+            $subtaskCount++;
+            $total = round($total + $untracked, 2);
+        }
+
+        $tasks = [];
+        foreach ($byTask as $taskId => $hours) {
+            $ref = (string) ($taskMeta[$taskId]['reference'] ?? '');
+            $tasks[] = [
+                'task_id'   => $taskId,
+                'reference' => $ref,
+                'title'     => (string) ($taskMeta[$taskId]['title'] ?? ''),
+                'hours'     => (float) $hours,
+                '_sort'     => $ref !== '' ? $ref : str_pad((string) $taskId, 12, '0', STR_PAD_LEFT),
+            ];
+        }
+        usort($tasks, static fn ($a, $b) => [$a['_sort'], $a['task_id']] <=> [$b['_sort'], $b['task_id']]);
+        foreach ($tasks as &$t) {
+            unset($t['_sort']);
+        }
+        unset($t);
+
+        return [
+            'task_count'    => count($tasks),
+            'subtask_count' => $subtaskCount,
+            'total_hours'   => (float) $total,
+            'tasks'         => $tasks,
+        ];
+    }
+
     /** Throw unless $projectId is one the user may access. Always call first. */
     public function assertProjectAccess(int $projectId, int $userId): void
     {

@@ -265,4 +265,81 @@ class TimeReportModelTest extends Base
         $this->expectException(\Kanboard\Core\Controller\AccessForbiddenException::class);
         $model->report(4242, '2026-03-01', '2026-03-31', 'day', false, 1);
     }
+
+    // ── Untracked subtask time (difference-based) ────────────────────────────
+
+    public function testUntrackedFullyManualSubtaskFlaggedWithFullAmount(): void
+    {
+        $records = [['subtask_id' => 1, 'task_id' => 63, 'time_spent' => 1.0]];
+        $tracked = []; // nothing tracked
+        $meta    = [63 => ['reference' => 'ABC-63', 'title' => 'hgello']];
+        $u = TimeReportModel::findUntrackedSubtaskTime($records, $tracked, $meta);
+
+        $this->assertSame(1, $u['task_count']);
+        $this->assertSame(1, $u['subtask_count']);
+        $this->assertSame(1.0, $u['total_hours']);
+        $this->assertSame(63, $u['tasks'][0]['task_id']);
+        $this->assertSame('ABC-63', $u['tasks'][0]['reference']);
+        $this->assertSame('hgello', $u['tasks'][0]['title']);
+        $this->assertSame(1.0, $u['tasks'][0]['hours']);
+    }
+
+    public function testUntrackedPartialFlagsOnlyTheDifference(): void
+    {
+        // Recorded 1.5, tracked 0.5 → 1.0 untracked (the manual portion).
+        $records = [['subtask_id' => 2, 'task_id' => 70, 'time_spent' => 1.5]];
+        $tracked = [2 => 0.5];
+        $u = TimeReportModel::findUntrackedSubtaskTime($records, $tracked, [70 => ['reference' => '', 'title' => 'Task 70']]);
+
+        $this->assertSame(1, $u['subtask_count']);
+        $this->assertSame(1.0, $u['total_hours']);
+        $this->assertSame(1.0, $u['tasks'][0]['hours']);
+    }
+
+    public function testUntrackedFullyTrackedNotFlagged(): void
+    {
+        $records = [['subtask_id' => 3, 'task_id' => 80, 'time_spent' => 2.0]];
+        $tracked = [3 => 2.0];
+        $u = TimeReportModel::findUntrackedSubtaskTime($records, $tracked, []);
+        $this->assertSame(0, $u['task_count']);
+        $this->assertSame(0, $u['subtask_count']);
+        $this->assertSame(0.0, $u['total_hours']);
+        $this->assertSame([], $u['tasks']);
+    }
+
+    public function testUntrackedSubPrecisionDifferenceNotFlagged(): void
+    {
+        // 1.50 recorded, 1.499 tracked → 0.001 → rounds to 0.00 → not flagged.
+        $records = [['subtask_id' => 4, 'task_id' => 81, 'time_spent' => 1.50]];
+        $tracked = [4 => 1.499];
+        $u = TimeReportModel::findUntrackedSubtaskTime($records, $tracked, []);
+        $this->assertSame(0, $u['subtask_count']);
+    }
+
+    public function testUntrackedGroupsMultipleSubtasksPerTaskAndSorts(): void
+    {
+        $records = [
+            ['subtask_id' => 10, 'task_id' => 90, 'time_spent' => 1.0],  // untracked 1.0
+            ['subtask_id' => 11, 'task_id' => 90, 'time_spent' => 2.0],  // untracked 2.0
+            ['subtask_id' => 12, 'task_id' => 85, 'time_spent' => 0.5],  // untracked 0.5
+        ];
+        $tracked = [];
+        $meta = [90 => ['reference' => 'REF-90', 'title' => 'Ninety'], 85 => ['reference' => 'REF-85', 'title' => 'Eighty-five']];
+        $u = TimeReportModel::findUntrackedSubtaskTime($records, $tracked, $meta);
+
+        $this->assertSame(2, $u['task_count']);
+        $this->assertSame(3, $u['subtask_count']);
+        $this->assertSame(3.5, $u['total_hours']);
+        // sorted by reference: REF-85 before REF-90
+        $this->assertSame(85, $u['tasks'][0]['task_id']);
+        $this->assertSame(0.5, $u['tasks'][0]['hours']);
+        $this->assertSame(90, $u['tasks'][1]['task_id']);
+        $this->assertSame(3.0, $u['tasks'][1]['hours']); // 1.0 + 2.0
+    }
+
+    public function testUntrackedEmptyInput(): void
+    {
+        $u = TimeReportModel::findUntrackedSubtaskTime([], [], []);
+        $this->assertSame(['task_count' => 0, 'subtask_count' => 0, 'total_hours' => 0.0, 'tasks' => []], $u);
+    }
 }
