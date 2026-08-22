@@ -15,6 +15,23 @@ class TimeReportHelper extends Base
         return number_format($hours, 2, '.', '');
     }
 
+    /**
+     * Prefix an ISO date (YYYY-MM-DD) with its abbreviated weekday: "Mon 2026-08-10".
+     * Any string that is not a bare ISO date is returned unchanged, so it is safe to
+     * call on any breakdown label (week ranges, task labels, "Total").
+     */
+    public function withWeekday(string $date): string
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return $date;
+        }
+        $ts = strtotime($date . ' 12:00:00');
+        if ($ts === false) {
+            return $date;
+        }
+        return date('D', $ts) . ' ' . $date;
+    }
+
     public function toMarkdown(array $report): string
     {
         $isTask = ($report['granularity'] ?? 'day') === 'task';

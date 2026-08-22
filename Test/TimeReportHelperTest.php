@@ -40,6 +40,23 @@ class TimeReportHelperTest extends Base
         $this->assertSame('10.25', $this->helper()->formatHours(10.25));
     }
 
+    public function testWithWeekdayPrefixesIsoDate(): void
+    {
+        $h = $this->helper();
+        $this->assertSame('Tue 2026-03-10', $h->withWeekday('2026-03-10'));
+        $this->assertSame('Wed 2026-03-11', $h->withWeekday('2026-03-11'));
+        $this->assertMatchesRegularExpression('/^[A-Z][a-z]{2} \d{4}-\d{2}-\d{2}$/', $h->withWeekday('2026-08-10'));
+    }
+
+    public function testWithWeekdayLeavesNonIsoUnchanged(): void
+    {
+        $h = $this->helper();
+        $this->assertSame('Aug 10 – Aug 16', $h->withWeekday('Aug 10 – Aug 16'));
+        $this->assertSame('#63 Some title', $h->withWeekday('#63 Some title'));
+        $this->assertSame('Total', $h->withWeekday('Total'));
+        $this->assertSame('', $h->withWeekday(''));
+    }
+
     public function testMarkdownHasHeaderTotalAndBreakdown(): void
     {
         $md = $this->helper()->toMarkdown($this->sampleReport());
