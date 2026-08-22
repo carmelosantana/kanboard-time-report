@@ -11,3 +11,15 @@
 .tr-untracked { margin: 1em 0; padding: 0.75em 1em; border-left: 3px solid #b58900; background: rgba(181,137,0,0.08); }
 .tr-untracked-banner { margin: 0 0 0.5em; }
 .tr-untracked-list { margin-top: 0.5em; }
+.tr-copy-num { cursor: pointer; position: relative; }
+.tr-copy-num:hover { background: rgba(75,159,213,0.10); }
+.tr-copy-num:focus { outline: 2px solid rgba(75,159,213,0.6); outline-offset: -2px; }
+.tr-copy-flash { background: rgba(75,159,213,0.30); }
+.tr-copy-badge {
+    position: absolute; top: -0.6em; right: 0.25em;
+    font-size: 0.7em; line-height: 1; padding: 0.15em 0.4em;
+    background: #4b9fd5; color: #fff; border-radius: 3px;
+    pointer-events: none; white-space: nowrap;
+    animation: tr-copy-fade 1.2s ease-out forwards;
+}
+@keyframes tr-copy-fade { 0% { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }

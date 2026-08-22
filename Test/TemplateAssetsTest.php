@@ -49,6 +49,14 @@ class TemplateAssetsTest extends Base
         $this->assertStringContainsString('data-tr-copy', $js);
     }
 
+    public function testJsHandlesSingleValueCopyAndKeyboard(): void
+    {
+        $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');
+        $this->assertStringContainsString('data-tr-copyval', $js, 'JS must copy single values');
+        $this->assertStringContainsString('keydown', $js, 'JS must support Enter/Space copy');
+        $this->assertStringContainsString('tr-copy-badge', $js, 'JS must show the Copied badge');
+    }
+
     public function testUntrackedPartialIsGatedAndWired(): void
     {
         $partial = $this->tpl('_untracked.php');
