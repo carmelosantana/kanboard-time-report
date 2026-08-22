@@ -342,4 +342,51 @@ class TimeReportModelTest extends Base
         $u = TimeReportModel::findUntrackedSubtaskTime([], [], []);
         $this->assertSame(['task_count' => 0, 'subtask_count' => 0, 'total_hours' => 0.0, 'tasks' => []], $u);
     }
+
+    // ── report() wires the untracked aggregate ─────────────────────────────
+
+    public function testReportAttachesUntrackedAggregateFromRealData(): void
+    {
+        // Project the user (1) can access.
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Untracked Demo'], 1, true);
+
+        // A task assigned to the user, and a subtask assigned to the user.
+        $taskId = (int) $this->container['taskCreationModel']->create([
+            'project_id' => $projectId, 'title' => 'Has manual subtask time', 'owner_id' => 1,
+        ]);
+        $subId = (int) $this->container['subtaskModel']->create([
+            'task_id' => $taskId, 'title' => 'typed in', 'user_id' => 1,
+        ]);
+
+        // Apply the recorded values LAST via direct DB writes: creating the subtask fires
+        // Kanboard's updateTaskTimeTracking(), which recalculates tasks.time_spent from the
+        // (then-zero) subtask — so set both AFTER the subtask exists, and there are no
+        // tracking rows to recalc them again.
+        $this->container['db']->table('subtasks')->eq('id', $subId)->update(['time_spent' => 1.25]);
+        $this->container['db']->table('tasks')->eq('id', $taskId)->update([
+            'owner_id' => 1, 'time_spent' => 3.0, 'is_active' => 0, 'date_completed' => strtotime('2026-03-10 12:00:00'),
+        ]);
+
+        $model = new TimeReportModel($this->container);
+        $report = $model->report($projectId, '2026-03-01', '2026-03-31', 'task', true, 1);
+
+        $this->assertArrayHasKey('untracked', $report);
+        $this->assertSame(1, $report['untracked']['task_count']);
+        $this->assertSame(1, $report['untracked']['subtask_count']);
+        $this->assertSame(1.25, $report['untracked']['total_hours']);
+        $this->assertSame($taskId, $report['untracked']['tasks'][0]['task_id']);
+        $this->assertSame(1.25, $report['untracked']['tasks'][0]['hours']);
+
+        // Counted totals are unaffected by the untracked warning.
+        $this->assertSame(3.0, $report['total_hours']);
+    }
+
+    public function testReportUntrackedEmptyWhenNothingManual(): void
+    {
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Clean Demo'], 1, true);
+        $model = new TimeReportModel($this->container);
+        $report = $model->report($projectId, '2026-03-01', '2026-03-31', 'day', false, 1);
+        $this->assertSame(0, $report['untracked']['task_count']);
+        $this->assertSame([], $report['untracked']['tasks']);
+    }
 }

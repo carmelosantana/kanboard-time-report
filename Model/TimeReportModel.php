@@ -291,6 +291,9 @@ class TimeReportModel extends Base
             $report['detail'] = $this->buildDetail($contributions, $taskRows, $startTs, $endTs);
         }
 
+        [$untrackedRecords, $trackedBySubtask, $untrackedTaskMeta] = $this->gatherUntrackedInputs($projectId, $userId);
+        $report['untracked'] = self::findUntrackedSubtaskTime($untrackedRecords, $trackedBySubtask, $untrackedTaskMeta);
+
         return $report;
     }
 
@@ -312,6 +315,60 @@ class TimeReportModel extends Base
             ];
         }
         return $normalized;
+    }
+
+    /**
+     * Inputs for findUntrackedSubtaskTime(): the user's subtasks in the project that
+     * carry a recorded time_spent, and the user's tracked hours per subtask.
+     *
+     * @return array{0: list<array{subtask_id:int,task_id:int,time_spent:float}>, 1: array<int,float>, 2: array<int,array{reference:string,title:string}>}
+     */
+    private function gatherUntrackedInputs(int $projectId, int $userId): array
+    {
+        $rows = $this->db->table(\Kanboard\Model\SubtaskModel::TABLE)
+            ->columns(
+                \Kanboard\Model\SubtaskModel::TABLE . '.id',
+                \Kanboard\Model\SubtaskModel::TABLE . '.task_id',
+                \Kanboard\Model\SubtaskModel::TABLE . '.time_spent',
+                \Kanboard\Model\TaskModel::TABLE . '.reference',
+                \Kanboard\Model\TaskModel::TABLE . '.title'
+            )
+            ->join(\Kanboard\Model\TaskModel::TABLE, 'id', 'task_id')
+            ->eq(\Kanboard\Model\TaskModel::TABLE . '.project_id', $projectId)
+            ->eq(\Kanboard\Model\SubtaskModel::TABLE . '.user_id', $userId)
+            ->gt(\Kanboard\Model\SubtaskModel::TABLE . '.time_spent', 0)
+            ->findAll();
+
+        $records  = [];
+        $taskMeta = [];
+        foreach ($rows as $r) {
+            $records[] = [
+                'subtask_id' => (int) $r['id'],
+                'task_id'    => (int) $r['task_id'],
+                'time_spent' => (float) $r['time_spent'],
+            ];
+            $taskMeta[(int) $r['task_id']] = [
+                'reference' => (string) ($r['reference'] ?? ''),
+                'title'     => (string) ($r['title'] ?? ''),
+            ];
+        }
+
+        // Sum the user's tracked hours per subtask (same hours math as the report).
+        $trackedBySubtask = [];
+        foreach ($this->subtaskTimeTrackingModel->getUserQuery($userId)->findAll() as $tt) {
+            $sid       = (int) $tt['subtask_id'];
+            $timeSpent = (float) $tt['time_spent'];
+            if ($timeSpent > 0) {
+                $hours = $timeSpent;
+            } else {
+                $start = (int) $tt['start'];
+                $end   = (int) $tt['end'];
+                $hours = $end > $start ? ($end - $start) / 3600 : 0.0;
+            }
+            $trackedBySubtask[$sid] = ($trackedBySubtask[$sid] ?? 0.0) + $hours;
+        }
+
+        return [$records, $trackedBySubtask, $taskMeta];
     }
 
     /** Completed tasks assigned to $userId in $projectId (all statuses so completed/closed are included). */
