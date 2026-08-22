@@ -64,7 +64,22 @@ class TimeReportHelperTest extends Base
         $this->assertStringContainsString('2026-03-01', $md);
         $this->assertStringContainsString('2026-03-31', $md);
         $this->assertStringContainsString('**Total hours:** 6.50', $md);
-        $this->assertStringContainsString('| 2026-03-10 | 3.50 |', $md);
+        $this->assertStringContainsString('| Tue 2026-03-10 | 3.50 |', $md);
+    }
+
+    public function testMarkdownPrefixesDatesWithWeekday(): void
+    {
+        $md = $this->helper()->toMarkdown($this->sampleReport(true));
+        $this->assertStringContainsString('Tue 2026-03-10', $md); // breakdown label + detail date
+        $this->assertStringContainsString('Wed 2026-03-11', $md); // breakdown label
+    }
+
+    public function testCsvKeepsBareIsoDatesNoWeekday(): void
+    {
+        $csv = $this->helper()->toCsv($this->sampleReport(true));
+        $this->assertStringContainsString('2026-03-10', $csv);
+        $this->assertStringNotContainsString('Tue', $csv);
+        $this->assertStringNotContainsString('Wed', $csv);
     }
 
     public function testMarkdownIncludesDetailAndAiWhenPresent(): void

@@ -51,9 +51,9 @@ class TimeReportHelper extends Base
         }
         foreach ($report['breakdown'] as $row) {
             if ($isTask) {
-                $lines[] = '| ' . $row['label'] . ' | ' . $this->formatHours((float) $row['hours']) . ' |';
+                $lines[] = '| ' . $this->withWeekday($row['label']) . ' | ' . $this->formatHours((float) $row['hours']) . ' |';
             } else {
-                $lines[] = '| ' . $row['label'] . ' | ' . $this->formatHours((float) $row['hours']) . ' | ' . (int) $row['task_count'] . ' |';
+                $lines[] = '| ' . $this->withWeekday($row['label']) . ' | ' . $this->formatHours((float) $row['hours']) . ' | ' . (int) $row['task_count'] . ' |';
             }
         }
 
@@ -65,7 +65,7 @@ class TimeReportHelper extends Base
             $lines[] = '| --- | --- | ---: | --- | --- | --- |';
             foreach ($report['detail'] as $d) {
                 $lines[] = '| ' . $d['reference'] . ' | ' . $d['title'] . ' | ' . $this->formatHours((float) $d['hours'])
-                    . ' | ' . $d['date_completed'] . ' | ' . $d['category'] . ' | ' . implode('; ', $d['tags']) . ' |';
+                    . ' | ' . $this->withWeekday($d['date_completed']) . ' | ' . $d['category'] . ' | ' . implode('; ', $d['tags']) . ' |';
             }
         }
 
