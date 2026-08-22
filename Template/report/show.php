@@ -22,6 +22,10 @@
     </div>
 </div>
 
+<?php if (! empty($report['untracked']['task_count'])): ?>
+    <?= $this->render('TimeReport:report/_untracked', ['report' => $report]) ?>
+<?php endif ?>
+
 <?= $this->render('TimeReport:report/_breakdown', ['report' => $report]) ?>
 
 <?php if (! empty($report['include_detail']) && ! empty($report['detail'])): ?>

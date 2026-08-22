@@ -7,3 +7,4 @@
 - Breakdowns by day, week, task, or total; optional completed-task detail.
 - Delivery: on-screen HTML, Copy-as-Markdown, CSV export.
 - Optional AI narrative summary via AiConnector (degrades to fully manual when absent).
+- Warn on-screen when a subtask has manually-entered time that isn't date-tracked (and so isn't counted), showing the untracked amount per task.

@@ -13,7 +13,7 @@ class TemplateAssetsTest extends Base
 
     public function testNoInlineScriptOrHandlersInTemplates(): void
     {
-        foreach (['form.php', 'show.php', '_breakdown.php', '_detail.php', 'header_dropdown.php'] as $f) {
+        foreach (['form.php', 'show.php', '_breakdown.php', '_detail.php', 'header_dropdown.php', '_untracked.php'] as $f) {
             $src = $this->tpl($f);
             $this->assertStringNotContainsString('<script', $src, "$f must not contain inline <script> (CSP)");
             $this->assertDoesNotMatchRegularExpression('/\son[a-z]+\s*=\s*["\']/i', $src, "$f must not contain inline on* handlers (CSP)");
@@ -32,5 +32,17 @@ class TemplateAssetsTest extends Base
         $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');
         $this->assertStringContainsString('navigator.clipboard', $js);
         $this->assertStringContainsString('data-tr-copy', $js);
+    }
+
+    public function testUntrackedPartialIsGatedAndWired(): void
+    {
+        $partial = $this->tpl('_untracked.php');
+        $this->assertStringContainsString('tr-untracked', $partial, 'partial must carry its container class');
+        $this->assertStringContainsString("untracked", $partial);
+        $this->assertStringContainsString("task_count", $partial, 'banner block must be gated on untracked.task_count');
+
+        $show = $this->tpl('show.php');
+        $this->assertStringContainsString('TimeReport:report/_untracked', $show, 'show must render the untracked partial');
+        $this->assertStringContainsString("task_count", $show, 'show must gate the partial on untracked.task_count');
     }
 }
