@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0 — 2026-08-22
+
+- Show the day of week on report dates (e.g. `Mon 2026-08-10`) on-screen and in the Copy-as-Markdown output; the CSV export keeps bare ISO dates.
+- Click (or press Enter/Space on) any hours value — the per-period rows, the completed-task rows, and the grand total — to copy it to the clipboard, with a brief flash and a "Copied ✓" badge, for quick single-value data entry.
+
 ## 1.0.0 — 2026-08-21
 
 - Initial release: self-only consultant hours report for one project over a date range.
