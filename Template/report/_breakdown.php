@@ -9,9 +9,10 @@
     </thead>
     <tbody>
         <?php foreach ($report['breakdown'] as $row): ?>
+            <?php $trHours = $this->helper->timeReport->formatHours((float) $row['hours']); ?>
             <tr>
-                <td><?= $this->text->e($row['label']) ?></td>
-                <td class="tr-num"><?= $this->text->e($this->helper->timeReport->formatHours((float) $row['hours'])) ?></td>
+                <td><?= $this->text->e($this->helper->timeReport->withWeekday($row['label'])) ?></td>
+                <td class="tr-num tr-copy-num" data-tr-copyval="<?= $this->text->e($trHours) ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= $this->text->e($trHours) ?></td>
                 <?php if (! $isTask): ?><td class="tr-num"><?= (int) $row['task_count'] ?></td><?php endif ?>
             </tr>
         <?php endforeach ?>

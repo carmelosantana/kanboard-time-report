@@ -8,11 +8,12 @@
     </thead>
     <tbody>
         <?php foreach ($report['detail'] as $d): ?>
+            <?php $trHours = $this->helper->timeReport->formatHours((float) $d['hours']); ?>
             <tr>
                 <td><?= $this->text->e($d['reference']) ?></td>
                 <td><?= $this->text->e($d['title']) ?></td>
-                <td class="tr-num"><?= $this->text->e($this->helper->timeReport->formatHours((float) $d['hours'])) ?></td>
-                <td><?= $this->text->e($d['date_completed']) ?></td>
+                <td class="tr-num tr-copy-num" data-tr-copyval="<?= $this->text->e($trHours) ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= $this->text->e($trHours) ?></td>
+                <td><?= $this->text->e($this->helper->timeReport->withWeekday($d['date_completed'])) ?></td>
                 <td><?= $this->text->e($d['category']) ?></td>
                 <td><?= $this->text->e(implode(', ', $d['tags'])) ?></td>
             </tr>

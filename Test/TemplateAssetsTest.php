@@ -20,6 +20,21 @@ class TemplateAssetsTest extends Base
         }
     }
 
+    public function testHoursCellsAreClickToCopy(): void
+    {
+        foreach (['_breakdown.php', '_detail.php', 'show.php'] as $f) {
+            $src = $this->tpl($f);
+            $this->assertStringContainsString('data-tr-copyval', $src, "$f hours value must be click-to-copy");
+            $this->assertStringContainsString('tr-copy-num', $src, "$f must mark the copyable cell");
+        }
+    }
+
+    public function testBreakdownAndDetailDecorateDatesWithWeekday(): void
+    {
+        $this->assertStringContainsString('withWeekday', $this->tpl('_breakdown.php'));
+        $this->assertStringContainsString('withWeekday', $this->tpl('_detail.php'));
+    }
+
     public function testShowEmitsMarkdownPayloadAndCopyButton(): void
     {
         $src = $this->tpl('show.php');
