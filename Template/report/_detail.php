@@ -12,7 +12,7 @@
             <tr>
                 <td><?= $this->text->e($d['reference']) ?></td>
                 <td><?= $this->text->e($d['title']) ?></td>
-                <td class="tr-num tr-copy-num" data-tr-copyval="<?= $this->text->e($trHours) ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= $this->text->e($trHours) ?></td>
+                <td class="tr-num tr-copy-num" data-tr-copyval="<?= $this->text->e($trHours) ?>" data-tr-copied="<?= t('Copied') ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= $this->text->e($trHours) ?></td>
                 <td><?= $this->text->e($this->helper->timeReport->withWeekday($d['date_completed'])) ?></td>
                 <td><?= $this->text->e($d['category']) ?></td>
                 <td><?= $this->text->e(implode(', ', $d['tags'])) ?></td>

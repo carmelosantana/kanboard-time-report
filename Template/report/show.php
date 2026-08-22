@@ -7,10 +7,10 @@
         <strong><?= t('Range') ?>:</strong> <?= $this->text->e($report['start_date']) ?> → <?= $this->text->e($report['end_date']) ?>
         &nbsp;·&nbsp;
         <?php $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']); ?>
-        <strong><?= t('Total hours') ?>:</strong> <span class="tr-copy-num" data-tr-copyval="<?= $this->text->e($trTotal) ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= $this->text->e($trTotal) ?></span>
+        <strong><?= t('Total hours') ?>:</strong> <span class="tr-copy-num" data-tr-copyval="<?= $this->text->e($trTotal) ?>" data-tr-copied="<?= t('Copied') ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= $this->text->e($trTotal) ?></span>
     </p>
     <div class="tr-actions">
-        <button type="button" class="btn" data-tr-copy><?= t('Copy as Markdown') ?></button>
+        <button type="button" class="btn" data-tr-copy data-tr-copied="<?= t('Copied') ?>"><?= t('Copy as Markdown') ?></button>
         <form method="post" class="tr-inline-form" action="<?= $this->url->href('TimeReportController', 'exportCsv', ['plugin' => 'TimeReport']) ?>">
             <?= $this->form->csrf() ?>
             <input type="hidden" name="project_id" value="<?= (int) $report['project_id'] ?>">

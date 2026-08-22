@@ -31,9 +31,12 @@
     function flashValue(cell) {
         cell.classList.add("tr-copy-flash");
         setTimeout(function () { cell.classList.remove("tr-copy-flash"); }, 600);
+        var existing = cell.querySelector(".tr-copy-badge");
+        if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
         var badge = document.createElement("span");
         badge.className = "tr-copy-badge";
-        badge.textContent = cell.getAttribute("data-tr-copied") || "Copied ✓";
+        var label = cell.getAttribute("data-tr-copied") || "Copied";
+        badge.textContent = label + " ✓";
         cell.appendChild(badge);
         setTimeout(function () {
             if (badge.parentNode) { badge.parentNode.removeChild(badge); }

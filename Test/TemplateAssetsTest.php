@@ -57,6 +57,16 @@ class TemplateAssetsTest extends Base
         $this->assertStringContainsString('tr-copy-badge', $js, 'JS must show the Copied badge');
     }
 
+    public function testCopyLabelIsLocalizableAndBadgeDedupes(): void
+    {
+        foreach (['_breakdown.php', '_detail.php', 'show.php'] as $f) {
+            $this->assertStringContainsString('data-tr-copied', $this->tpl($f), "$f copy target must carry a localizable copied label");
+        }
+        $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');
+        $this->assertStringContainsString('data-tr-copied', $js);
+        $this->assertStringContainsString('querySelector(".tr-copy-badge")', $js, 'badge must be deduped before append');
+    }
+
     public function testUntrackedPartialIsGatedAndWired(): void
     {
         $partial = $this->tpl('_untracked.php');
