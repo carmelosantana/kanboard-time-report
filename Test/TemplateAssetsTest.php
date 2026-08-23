@@ -67,6 +67,24 @@ class TemplateAssetsTest extends Base
         $this->assertStringContainsString('querySelector(".tr-copy-badge")', $js, 'badge must be deduped before append');
     }
 
+    public function testProjectMenuPartialLinksBothEntries(): void
+    {
+        $src = file_get_contents(dirname(__DIR__) . '/Template/project/menu.php');
+        $this->assertStringNotContainsString('<script', $src, 'menu partial must not contain inline <script> (CSP)');
+        $this->assertDoesNotMatchRegularExpression('/\son[a-z]+\s*=\s*["\']/i', $src, 'menu partial must not contain inline on* handlers (CSP)');
+        $this->assertStringContainsString("'view'", $src, 'menu must link the quick view action');
+        $this->assertStringContainsString("'index'", $src, 'menu must link the report form');
+        $this->assertStringContainsString("project['id']", $src, 'menu links must carry the project id');
+    }
+
+    public function testPluginWiresProjectMenuAndViewRoute(): void
+    {
+        $plugin = file_get_contents(dirname(__DIR__) . '/Plugin.php');
+        $this->assertStringContainsString("addRoute('timereport/view'", $plugin, 'view route must be registered');
+        $this->assertStringContainsString('template:project:dropdown', $plugin, 'project ≡ menu hook must be attached');
+        $this->assertStringContainsString('TimeReport:project/menu', $plugin, 'the menu partial must be attached to the hook');
+    }
+
     public function testUntrackedPartialIsGatedAndWired(): void
     {
         $partial = $this->tpl('_untracked.php');

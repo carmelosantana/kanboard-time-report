@@ -44,6 +44,9 @@ class Plugin extends Base
         // ── Entry-point link in the header user dropdown ──────────────────────
         $this->template->hook->attach('template:header:dropdown', 'TimeReport:report/header_dropdown');
 
+        // ── Entry links in the project ≡ menu (core passes $project) ──────────
+        $this->template->hook->attach('template:project:dropdown', 'TimeReport:project/menu');
+
         // ── Assets (CSP-safe: external files, delegated JS) ───────────────────
         $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/timereport.css']);
         $this->hook->on('template:layout:js', ['template' => 'plugins/TimeReport/Assets/js/timereport.js']);
