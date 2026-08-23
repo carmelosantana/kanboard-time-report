@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 — 2026-08-23
+
+- Added **Generate report** and **Time Report** links to each project's ≡ menu: "Generate report" jumps straight to that project's report for the current month grouped by task; "Time Report" opens the report form with the project pre-selected.
+- The report form now accepts a `project_id` in the URL and pre-selects that project.
+
 ## 1.1.0 — 2026-08-22
 
 - Show the day of week on report dates (e.g. `Mon 2026-08-10`) on-screen and in the Copy-as-Markdown output; the CSV export keeps bare ISO dates.
