@@ -39,6 +39,7 @@ class Plugin extends Base
         $this->route->addRoute('timereport', 'TimeReportController', 'index', 'TimeReport');
         $this->route->addRoute('timereport/generate', 'TimeReportController', 'generate', 'TimeReport');
         $this->route->addRoute('timereport/export-csv', 'TimeReportController', 'exportCsv', 'TimeReport');
+        $this->route->addRoute('timereport/view', 'TimeReportController', 'view', 'TimeReport');
 
         // ── Entry-point link in the header user dropdown ──────────────────────
         $this->template->hook->attach('template:header:dropdown', 'TimeReport:report/header_dropdown');

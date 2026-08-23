@@ -127,4 +127,52 @@ class TimeReportControllerTest extends Base
         $this->assertSame('canned', $report['ai']['summary'], 'AI summary must be attached when wanted and the gate is open');
         $this->assertFalse($report['include_detail'], 'display intent preserved: user did not request the detail listing');
     }
+
+    public function testQuickReportDefaultsToThisMonthPerTaskNoDetail(): void
+    {
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Acme'], 1, true);
+        $this->container['timeReportModel'] = function ($c) {
+            return new \Kanboard\Plugin\TimeReport\Model\TimeReportModel($c);
+        };
+        $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
+            public function quickPublic(int $projectId, int $userId): array { return $this->quickReport($projectId, $userId); }
+        };
+        $report = $controller->quickPublic($projectId, 1);
+        $this->assertSame('task', $report['granularity']);
+        $this->assertSame(date('Y-m-01'), $report['start_date']);
+        $this->assertSame(date('Y-m-d'), $report['end_date']);
+        $this->assertFalse($report['include_detail']);
+    }
+
+    public function testQuickReportAccessGuardThrowsForInaccessibleProject(): void
+    {
+        $this->container['timeReportModel'] = function ($c) {
+            return new \Kanboard\Plugin\TimeReport\Model\TimeReportModel($c);
+        };
+        $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
+            public function quickPublic(int $projectId, int $userId): array { return $this->quickReport($projectId, $userId); }
+        };
+        $this->expectException(\Kanboard\Core\Controller\AccessForbiddenException::class);
+        $controller->quickPublic(999999, 1);
+    }
+
+    public function testPrefillProjectIdOnlySelectsAccessibleProject(): void
+    {
+        $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
+            public function prefillPublic(int $requested, array $projects): int { return $this->prefillProjectId($requested, $projects); }
+        };
+        $projects = [5 => 'Acme', 8 => 'Beta'];
+        $this->assertSame(5, $controller->prefillPublic(5, $projects));
+        $this->assertSame(0, $controller->prefillPublic(7, $projects), 'inaccessible id not selected');
+        $this->assertSame(0, $controller->prefillPublic(0, $projects), 'no id → no selection');
+    }
+
+    public function testViewIsReadOnlyGetWithAccessRedirect(): void
+    {
+        $src = $this->source();
+        $this->assertStringContainsString('function view(', $src, 'quick view action exists');
+        $this->assertStringContainsString('getIntegerParam', $src, 'view/index read project_id from the query');
+        $this->assertStringContainsString('AccessForbiddenException', $src, 'view catches the access exception and redirects');
+        $this->assertStringContainsString('report/show', $src, 'view renders the report view');
+    }
 }

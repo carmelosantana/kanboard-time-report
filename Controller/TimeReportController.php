@@ -3,6 +3,7 @@
 namespace Kanboard\Plugin\TimeReport\Controller;
 
 use Kanboard\Controller\BaseController;
+use Kanboard\Core\Controller\AccessForbiddenException;
 use Kanboard\Plugin\TimeReport\Model\AiGate;
 
 /**
@@ -30,16 +31,22 @@ class TimeReportController extends BaseController
             }
         }
 
+        $values = [
+            'start_date'  => date('Y-m-01'),
+            'end_date'    => date('Y-m-d'),
+            'granularity' => 'day',
+        ];
+        $selected = $this->prefillProjectId($this->request->getIntegerParam('project_id'), $projects);
+        if ($selected > 0) {
+            $values['project_id'] = $selected;
+        }
+
         $this->response->html($this->helper->layout->app('TimeReport:report/form', [
             'title'      => t('Time Report'),
             'projects'   => $projects,
             'ai_enabled' => $this->isAiEnabled(),
             'profiles'   => $this->aiProfiles(),
-            'values'     => [
-                'start_date'  => date('Y-m-01'),
-                'end_date'    => date('Y-m-d'),
-                'granularity' => 'day',
-            ],
+            'values'     => $values,
         ]));
     }
 
@@ -57,6 +64,43 @@ class TimeReportController extends BaseController
             'markdown'   => $markdown,
             'ai_enabled' => $this->isAiEnabled(),
         ]));
+    }
+
+    /** One-click report for a project: read-only GET, fixed quick defaults. No CSRF (no state change). */
+    public function view(): void
+    {
+        $userId    = $this->userSession->getId();
+        $projectId = $this->request->getIntegerParam('project_id');
+
+        try {
+            $report = $this->quickReport($projectId, $userId);
+        } catch (AccessForbiddenException $e) {
+            $this->response->redirect($this->helper->url->to('TimeReportController', 'index', ['plugin' => 'TimeReport']));
+            return;
+        }
+
+        $markdown = $this->helper->timeReport->toMarkdown($report);
+
+        $this->response->html($this->helper->layout->app('TimeReport:report/show', [
+            'title'      => t('Time Report'),
+            'report'     => $report,
+            'markdown'   => $markdown,
+            'ai_enabled' => $this->isAiEnabled(),
+        ]));
+    }
+
+    /** Fixed quick defaults: this month to date, per task, no detail, no AI. Access-guarded by the model. */
+    protected function quickReport(int $projectId, int $userId): array
+    {
+        $report = $this->timeReportModel->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', false, $userId);
+        $report['include_detail'] = false;
+        return $report;
+    }
+
+    /** The project id to pre-select in the form, or 0 when the requested id isn't in the user's accessible list. */
+    protected function prefillProjectId(int $requested, array $projects): int
+    {
+        return ($requested > 0 && isset($projects[$requested])) ? $requested : 0;
     }
 
     /** Same params, streamed as a CSV download. */
