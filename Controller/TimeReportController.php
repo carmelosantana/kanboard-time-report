@@ -92,9 +92,8 @@ class TimeReportController extends BaseController
     /** Fixed quick defaults: this month to date, per task, no detail, no AI. Access-guarded by the model. */
     protected function quickReport(int $projectId, int $userId): array
     {
-        $report = $this->timeReportModel->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', false, $userId);
-        $report['include_detail'] = false;
-        return $report;
+        // report() already returns include_detail => false for the false argument above.
+        return $this->timeReportModel->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', false, $userId);
     }
 
     /** The project id to pre-select in the form, or 0 when the requested id isn't in the user's accessible list. */
