@@ -738,4 +738,147 @@ class TimeReportModelTest extends Base
 
         $this->assertSame([1 => 5.0, 2 => 4.0], TimeReportModel::hoursByUser($contribs));
     }
+
+    // --- report() subject-set wiring ---
+
+    /** Both users get hours: a requester with none is not a participant and gets filtered out. */
+    private function seedProjectWithTwoContributors(): array
+    {
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Billing'], 1, true);
+        $bob = (int) $this->container['userModel']->create(['username' => 'bob2', 'name' => 'Bob', 'password' => 'xxxxxxxx']);
+        $this->container['projectUserRoleModel']->addUser($projectId, $bob, \Kanboard\Core\Security\Role::PROJECT_MEMBER);
+
+        $bobTask = (int) $this->container['taskCreationModel']->create([
+            'title' => 'Bob task', 'project_id' => $projectId, 'owner_id' => $bob, 'time_spent' => 4.0,
+        ]);
+        $this->container['taskStatusModel']->close($bobTask);
+
+        $mineTask = (int) $this->container['taskCreationModel']->create([
+            'title' => 'My task', 'project_id' => $projectId, 'owner_id' => 1, 'time_spent' => 1.0,
+        ]);
+        $this->container['taskStatusModel']->close($mineTask);
+
+        return [$projectId, $bob];
+    }
+
+    public function testSixArgumentCallIsSelfOnlyAndNotMultiUser(): void
+    {
+        [$projectId] = $this->seedProjectWithTwoContributors();
+        $model = new TimeReportModel($this->container);
+
+        // The TimeInvoice call shape — six positional arguments.
+        $report = $model->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', true, 1);
+
+        $this->assertSame([1], $report['subject_user_ids']);
+        $this->assertFalse($report['multi_user']);
+        $this->assertFalse($report['scope_denied']);
+        $this->assertSame(1.0, $report['total_hours'], "only user 1's own hour; Bob's 4h must not leak in");
+    }
+
+    public function testAdminCanIncludeAnotherUser(): void
+    {
+        [$projectId, $bob] = $this->seedProjectWithTwoContributors();
+        $model = new TimeReportModel($this->container);
+
+        $report = $model->report($projectId, date('Y-m-01'), date('Y-m-d'), 'user', true, 1, [1, $bob]);
+
+        $this->assertSame([1, $bob], $report['subject_user_ids']);
+        $this->assertTrue($report['multi_user']);
+        $this->assertSame(5.0, $report['total_hours']);
+        $this->assertArrayHasKey($bob, $report['users']);
+    }
+
+    public function testAllUsersIntentResolvesToEveryParticipant(): void
+    {
+        [$projectId, $bob] = $this->seedProjectWithTwoContributors();
+        $model = new TimeReportModel($this->container);
+
+        $report = $model->report($projectId, date('Y-m-01'), date('Y-m-d'), 'user', false, 1, null, true);
+
+        $this->assertContains($bob, $report['subject_user_ids']);
+        $this->assertSame(5.0, $report['total_hours']);
+    }
+
+    public function testParticipantsAreReturnedForDiscovery(): void
+    {
+        [$projectId, $bob] = $this->seedProjectWithTwoContributors();
+        $model = new TimeReportModel($this->container);
+
+        $report = $model->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', false, 1);
+
+        $this->assertArrayHasKey($bob, $report['participants'], 'a manager must discover Bob without a second query');
+    }
+
+    public function testDetailRowsCarryTheAssigneeName(): void
+    {
+        [$projectId, $bob] = $this->seedProjectWithTwoContributors();
+        $model = new TimeReportModel($this->container);
+
+        $report = $model->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', true, 1, [1, $bob]);
+
+        $names = array_column($report['detail'], 'assignee');
+        $this->assertContains('Bob', $names);
+    }
+
+    /**
+     * Detail-scoping leak (Task 4→5 carry-forward): gatherRangeTaskRows is owner-agnostic,
+     * so a self-only report must NOT surface a task another user owns and user 1 never
+     * touched. Bob's completed task must be absent from user 1's self-only detail.
+     */
+    public function testSelfOnlyDetailExcludesAnotherUsersCompletedTask(): void
+    {
+        [$projectId, $bob] = $this->seedProjectWithTwoContributors();
+        $model = new TimeReportModel($this->container);
+
+        $bobTaskId = (int) $this->container['db']->table(\Kanboard\Model\TaskModel::TABLE)
+            ->eq('owner_id', $bob)->eq('project_id', $projectId)->findOneColumn('id');
+        $this->assertGreaterThan(0, $bobTaskId);
+
+        // Six-argument self-only report.
+        $report = $model->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', true, 1);
+
+        $detailTaskIds = array_map('intval', array_column($report['detail'], 'task_id'));
+        $this->assertNotContains($bobTaskId, $detailTaskIds, "Bob's completed task must not leak into user 1's self-only detail");
+    }
+
+    /**
+     * REGRESSION: a selected user's work on someone else's task must keep its task
+     * label and appear in the completed-task detail, even though the owner is not in
+     * the subject set.
+     */
+    public function testCrossOwnerContributionKeepsMetadataAndDetail(): void
+    {
+        $model = new TimeReportModel($this->container);
+
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Cross'], 1, true);
+        $alice = (int) $this->container['userModel']->create(['username' => 'alice', 'name' => 'Alice', 'password' => 'xxxxxxxx']);
+        $bob   = (int) $this->container['userModel']->create(['username' => 'bobx', 'name' => 'Bob', 'password' => 'xxxxxxxx']);
+        foreach ([$alice, $bob] as $u) {
+            $this->container['projectUserRoleModel']->addUser($projectId, $u, \Kanboard\Core\Security\Role::PROJECT_MEMBER);
+        }
+
+        // Alice OWNS the task; Bob logs the tracked time on its subtask.
+        $taskId = (int) $this->container['taskCreationModel']->create([
+            'title' => 'Shared work', 'project_id' => $projectId, 'owner_id' => $alice,
+        ]);
+        $subtaskId = (int) $this->container['subtaskModel']->create([
+            'task_id' => $taskId, 'title' => 'Do it', 'user_id' => $bob,
+        ]);
+        $this->container['db']->table('subtask_time_tracking')->insert([
+            'subtask_id' => $subtaskId,
+            'user_id'    => $bob,
+            'start'      => strtotime(date('Y-m-01') . ' 09:00:00'),
+            'end'        => strtotime(date('Y-m-01') . ' 11:00:00'),
+            'time_spent' => 2.0,
+        ]);
+        $this->container['taskStatusModel']->close($taskId);
+
+        // Report on BOB only — Alice, the owner, is deliberately excluded.
+        $report = $model->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', true, 1, [$bob]);
+
+        $this->assertSame(2.0, $report['total_hours']);
+        $this->assertStringContainsString('Shared work', $report['breakdown'][0]['label'], 'task label must not degrade to #id');
+        $this->assertNotEmpty($report['detail'], 'the task Bob worked on must appear in detail');
+        $this->assertSame($taskId, $report['detail'][0]['task_id']);
+    }
 }

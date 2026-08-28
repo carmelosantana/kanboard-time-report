@@ -75,7 +75,7 @@ class TimeReportControllerTest extends Base
         // Fake model that counts report() invocations and returns a minimal aggregate.
         $fakeModel = new class($this->container) extends \Kanboard\Plugin\TimeReport\Model\TimeReportModel {
             public int $calls = 0;
-            public function report(int $projectId, string $startDate, string $endDate, string $granularity, bool $includeDetail, int $userId): array
+            public function report(int $projectId, string $startDate, string $endDate, string $granularity, bool $includeDetail, int $userId, ?array $subjectUserIds = null, bool $allUsers = false): array
             {
                 $this->calls++;
                 return [

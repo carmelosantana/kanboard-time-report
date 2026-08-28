@@ -471,54 +471,100 @@ class TimeReportModel extends Base
     }
 
     /**
-     * Compute the full report aggregate for one project + range for $userId.
-     * AI is not attached here (ai => null); the controller adds it when enabled.
+     * Compute the full report aggregate for one project + range.
      *
-     * @return array Report aggregate (see plan Data shapes).
+     * $userId is the REQUESTING user and drives both authorization layers. The subject
+     * set arrives separately: $subjectUserIds names specific users, $allUsers carries
+     * the "every participant" intent. The first six parameters are frozen — TimeInvoice
+     * calls this positionally with six arguments.
+     *
+     * AI is not attached here (ai => null); the controller adds it when enabled.
      */
-    public function report(int $projectId, string $startDate, string $endDate, string $granularity, bool $includeDetail, int $userId): array
+    public function report(int $projectId, string $startDate, string $endDate, string $granularity, bool $includeDetail, int $userId, ?array $subjectUserIds = null, bool $allUsers = false): array
     {
         $this->assertProjectAccess($projectId, $userId);
 
         $startTs = (int) strtotime($startDate . ' 00:00:00');
         $endTs   = (int) strtotime($endDate . ' 23:59:59');
 
-        // Source 1: project-wide subtask time rows in range (self-only filtering happens
-        // in buildContributions via the [$userId] subject set below).
+        // Gathered ONCE. The subject set decides what is emitted, never what is seen.
         $subtaskRows = $this->gatherSubtaskRows($projectId, $startTs, $endTs);
-        // Source 2: tasks completed in range (every owner; the subject set scopes them).
-        $taskRows = $this->gatherRangeTaskRows($projectId, $startTs, $endTs);
+        $taskRows    = $this->gatherRangeTaskRows($projectId, $startTs, $endTs);
+        $suppressed  = self::suppressedTaskIdsFromRows($this->gatherSuppressionRows($projectId));
 
-        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, [$userId]);
+        $canReportOthers = $this->canReportOnOthers($projectId, $userId);
 
-        // Task meta for `task` granularity labels.
+        // Discovery runs at most once per request and doubles as the refine panel's data.
+        $participants = $canReportOthers
+            ? $this->buildParticipants($subtaskRows, $taskRows, $startTs, $endTs, $projectId, self::allUserIds($subtaskRows, $taskRows), $suppressed)
+            : [];
+
+        [$subjectIds, $scopeDenied] = self::sanitizeSubjectUserIds(
+            $subjectUserIds,
+            $allUsers,
+            $userId,
+            array_keys($participants),
+            $canReportOthers
+        );
+
+        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $subjectIds, $suppressed);
+
+        // Labels for every contributed task, including one completed outside the range
+        // or owned by somebody outside the subject set.
         $taskMeta = [];
         foreach ($taskRows as $t) {
             $taskMeta[(int) $t['id']] = ['reference' => (string) ($t['reference'] ?? ''), 'title' => (string) ($t['title'] ?? '')];
         }
+        $missing = array_diff(array_unique(array_map('intval', array_column($contributions, 'task_id'))), array_keys($taskMeta));
+        foreach ($this->gatherTaskMeta($projectId, $missing) as $tid => $meta) {
+            $taskMeta[$tid] = $meta;
+        }
 
-        $bucketed = self::bucket($contributions, $granularity, $taskMeta);
+        $userNames = $this->userNames($subjectIds);
+        $userMeta  = [];
+        foreach ($userNames as $uid => $name) {
+            $userMeta[$uid] = ['name' => $name];
+        }
+
+        $bucketed = self::bucket($contributions, $granularity, $taskMeta, $userMeta);
+
+        $perUser = self::hoursByUser($contributions);
+        $users   = [];
+        foreach ($subjectIds as $uid) {
+            $users[$uid] = [
+                'name'  => $userNames[$uid] ?? ('#' . $uid),
+                'hours' => (float) ($perUser[$uid] ?? 0.0),
+            ];
+        }
 
         $project = $this->projectModel->getById($projectId);
 
         $report = [
-            'project_id'     => $projectId,
-            'project_name'   => (string) ($project['name'] ?? ('#' . $projectId)),
-            'start_date'     => $startDate,
-            'end_date'       => $endDate,
-            'granularity'    => $granularity,
-            'total_hours'    => $bucketed['total_hours'],
-            'breakdown'      => $bucketed['breakdown'],
-            'include_detail' => $includeDetail,
-            'detail'         => [],
-            'ai'             => null,
+            'project_id'        => $projectId,
+            'project_name'      => (string) ($project['name'] ?? ('#' . $projectId)),
+            'start_date'        => $startDate,
+            'end_date'          => $endDate,
+            'granularity'       => $granularity,
+            'total_hours'       => $bucketed['total_hours'],
+            'breakdown'         => $bucketed['breakdown'],
+            'include_detail'    => $includeDetail,
+            'detail'            => [],
+            'ai'                => null,
+            'subject_user_ids'  => $subjectIds,
+            'users'             => $users,
+            'participants'      => $participants,
+            'multi_user'        => count($subjectIds) > 1,
+            'can_report_others' => $canReportOthers,
+            'scope_denied'      => $scopeDenied,
         ];
 
         if ($includeDetail) {
-            $report['detail'] = $this->buildDetail($contributions, $taskRows, $startTs, $endTs);
+            $report['detail'] = $this->buildDetail($contributions, $taskRows, $subjectIds);
         }
 
-        [$untrackedRecords, $trackedBySubtask, $untrackedTaskMeta] = $this->gatherUntrackedInputs($projectId, $userId);
+        // Scoped by PERMISSION, not by the subject set, so the warning is invariant
+        // under selection changes.
+        [$untrackedRecords, $trackedBySubtask, $untrackedTaskMeta] = $this->gatherUntrackedInputs($projectId, $canReportOthers ? null : $userId);
         $report['untracked'] = self::findUntrackedSubtaskTime($untrackedRecords, $trackedBySubtask, $untrackedTaskMeta);
 
         return $report;
@@ -750,11 +796,17 @@ class TimeReportModel extends Base
     }
 
     /**
-     * Completed-task detail set: tasks assigned to the user with date_completed in
-     * range, each with its hours from the contribution union (0 if none), category, tags.
+     * Completed-task detail set.
+     *
+     * $taskRows is already restricted to tasks completed in range. A task belongs in
+     * the detail when a selected user owns it OR a selected user contributed hours to
+     * it. The second half matters: without it, a user's work on somebody else's task
+     * would be counted in the total but missing from the artifact justifying the invoice.
      */
-    private function buildDetail(array $contributions, array $taskRows, int $startTs, int $endTs): array
+    private function buildDetail(array $contributions, array $taskRows, array $subjectIds): array
     {
+        $selected = array_flip(array_map('intval', $subjectIds));
+
         $hoursByTask = [];
         foreach ($contributions as $c) {
             $hoursByTask[(int) $c['task_id']] = ($hoursByTask[(int) $c['task_id']] ?? 0.0) + (float) $c['hours'];
@@ -762,15 +814,16 @@ class TimeReportModel extends Base
 
         $completed = [];
         foreach ($taskRows as $t) {
-            $completedTs = (int) $t['date_completed'];
-            if ($completedTs < $startTs || $completedTs > $endTs) {
+            $id = (int) $t['id'];
+            if (! isset($selected[(int) $t['owner_id']]) && ! isset($hoursByTask[$id])) {
                 continue;
             }
-            $completed[(int) $t['id']] = $t;
+            $completed[$id] = $t;
         }
 
         $ids = array_keys($completed);
         $tagsByTask = empty($ids) ? [] : $this->taskTagModel->getTagsByTaskIds($ids);
+        $assigneeNames = $this->userNames(array_map(static fn ($t) => (int) $t['owner_id'], $completed));
 
         $detail = [];
         foreach ($completed as $id => $t) {
@@ -779,14 +832,15 @@ class TimeReportModel extends Base
                 'task_id'        => $id,
                 'reference'      => (string) $t['reference'],
                 'title'          => (string) $t['title'],
+                'assignee'       => (string) ($assigneeNames[(int) $t['owner_id']] ?? ''),
                 'hours'          => (float) ($hoursByTask[$id] ?? 0.0),
                 'date_completed' => date('Y-m-d', (int) $t['date_completed']),
                 'category'       => (string) $t['category'],
                 'tags'           => $tagNames,
             ];
         }
-        // Sort by completion date then reference for stable output.
         usort($detail, static fn ($a, $b) => [$a['date_completed'], $a['reference']] <=> [$b['date_completed'], $b['reference']]);
+
         return $detail;
     }
 }
