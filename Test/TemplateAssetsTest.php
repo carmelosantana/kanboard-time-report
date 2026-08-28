@@ -96,4 +96,49 @@ class TemplateAssetsTest extends Base
         $this->assertStringContainsString('TimeReport:report/_untracked', $show, 'show must render the untracked partial');
         $this->assertStringContainsString("task_count", $show, 'show must gate the partial on untracked.task_count');
     }
+
+    public function testUsersPanelExistsAndPostsUserIds(): void
+    {
+        $src = $this->tpl('_users.php');
+        $this->assertStringContainsString('user_ids[]', $src);
+        $this->assertStringContainsString('csrf', $src, 'the refine panel is a POST and must carry CSRF');
+        $this->assertStringContainsString("'generate'", $src);
+    }
+
+    public function testCsvExportCarriesTheSubjectSet(): void
+    {
+        $src = $this->tpl('show.php');
+        $this->assertStringContainsString('subject_user_ids', $src, 'CSV must export the same people shown on screen');
+        $this->assertStringContainsString('scope_denied', $src, 'the denial notice must be rendered');
+    }
+
+    /**
+     * A denied result posts back [self], which would look like an ordinary self-only
+     * request and slip past exportCsv()'s guard. The export action must not be
+     * rendered at all in that state.
+     */
+    public function testDeniedResultRendersNoCsvExportAction(): void
+    {
+        $src = $this->tpl('show.php');
+        $this->assertMatchesRegularExpression(
+            '/empty\(\$report\[.scope_denied.\]\).*?exportCsv/s',
+            $src,
+            'the CSV export form must be suppressed when the scope was denied'
+        );
+    }
+
+    public function testFormHasScopeToggleAndUserGranularity(): void
+    {
+        $src = $this->tpl('form.php');
+        $this->assertStringContainsString("'scope'", $src);
+        $this->assertStringContainsString('can_report_others', $src, 'the toggle is gated on permission');
+        $this->assertStringContainsString("'user' => t('By user')", $src);
+    }
+
+    public function testDetailAssigneeColumnIsConditional(): void
+    {
+        $src = $this->tpl('_detail.php');
+        $this->assertStringContainsString('multi_user', $src);
+        $this->assertStringContainsString('Assignee', $src);
+    }
 }

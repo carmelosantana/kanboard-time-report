@@ -2,6 +2,12 @@
     <h2><?= t('Time Report') ?> — <?= $this->text->e($report['project_name']) ?></h2>
 </div>
 
+<?php if (! empty($report['scope_denied'])): ?>
+    <div class="alert alert-error">
+        <?= t('You do not have permission to include other users in this project. Showing your own hours.') ?>
+    </div>
+<?php endif ?>
+
 <div class="tr-summary">
     <p>
         <strong><?= t('Range') ?>:</strong> <?= $this->text->e($report['start_date']) ?> → <?= $this->text->e($report['end_date']) ?>
@@ -11,6 +17,7 @@
     </p>
     <div class="tr-actions">
         <button type="button" class="btn" data-tr-copy data-tr-copied="<?= t('Copied') ?>"><?= t('Copy as Markdown') ?></button>
+        <?php if (empty($report['scope_denied'])): ?>
         <form method="post" class="tr-inline-form" action="<?= $this->url->href('TimeReportController', 'exportCsv', ['plugin' => 'TimeReport']) ?>">
             <?= $this->form->csrf() ?>
             <input type="hidden" name="project_id" value="<?= (int) $report['project_id'] ?>">
@@ -18,13 +25,21 @@
             <input type="hidden" name="end_date" value="<?= $this->text->e($report['end_date']) ?>">
             <input type="hidden" name="granularity" value="<?= $this->text->e($report['granularity']) ?>">
             <input type="hidden" name="include_detail" value="<?= ! empty($report['include_detail']) ? 1 : 0 ?>">
+            <?php foreach ($report['subject_user_ids'] as $trUid): ?>
+                <input type="hidden" name="user_ids[]" value="<?= (int) $trUid ?>">
+            <?php endforeach ?>
             <button type="submit" class="btn"><?= t('Export CSV') ?></button>
         </form>
+        <?php endif ?>
     </div>
 </div>
 
 <?php if (! empty($report['untracked']['task_count'])): ?>
     <?= $this->render('TimeReport:report/_untracked', ['report' => $report]) ?>
+<?php endif ?>
+
+<?php if (! empty($report['participants']) && count($report['participants']) > 1): ?>
+    <?= $this->render('TimeReport:report/_users', ['report' => $report]) ?>
 <?php endif ?>
 
 <?= $this->render('TimeReport:report/_breakdown', ['report' => $report]) ?>

@@ -15,7 +15,12 @@
     <?= $this->form->text('end_date', $values, [], ['placeholder="YYYY-MM-DD"', 'required']) ?>
 
     <?= $this->form->label(t('Breakdown'), 'granularity') ?>
-    <?= $this->form->select('granularity', ['day' => t('Per day'), 'week' => t('Per week'), 'task' => t('Per task'), 'total' => t('Total only')], $values) ?>
+    <?= $this->form->select('granularity', ['day' => t('Per day'), 'week' => t('Per week'), 'task' => t('Per task'), 'total' => t('Total only'), 'user' => t('By user')], $values) ?>
+
+    <?php if (! empty($can_report_others)): ?>
+        <?= $this->form->label(t('Include'), 'scope') ?>
+        <?= $this->form->select('scope', ['self' => t('Just me'), 'all' => t('All users')], $values) ?>
+    <?php endif ?>
 
     <div class="tr-toggles">
         <label><?= $this->form->checkbox('include_detail', t('Include completed-task detail'), 1) ?></label>

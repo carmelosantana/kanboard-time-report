@@ -1,8 +1,15 @@
-<?php $isTask = $report['granularity'] === 'task'; ?>
+<?php
+$isTask = $report['granularity'] === 'task';
+$trLabel = match ($report['granularity']) {
+    'task'  => t('Task'),
+    'user'  => t('User'),
+    default => t('Period'),
+};
+?>
 <table class="table-fixed tr-breakdown">
     <thead>
         <tr>
-            <th><?= $isTask ? t('Task') : t('Period') ?></th>
+            <th><?= $trLabel ?></th>
             <th class="tr-num"><?= t('Hours') ?></th>
             <?php if (! $isTask): ?><th class="tr-num"><?= t('Tasks') ?></th><?php endif ?>
         </tr>
