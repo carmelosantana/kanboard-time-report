@@ -302,6 +302,113 @@ class TimeReportModel extends Base
         return $this->projectUserRoleModel->getUserRole($projectId, $userId) === Role::PROJECT_MANAGER;
     }
 
+    /** Every POSITIVE user id in the gathered rows, as a logger or a task owner. */
+    public static function allUserIds(array $subtaskRows, array $taskRows): array
+    {
+        $ids = array_merge(
+            array_map('intval', array_column($subtaskRows, 'user_id')),
+            array_map('intval', array_column($taskRows, 'owner_id'))
+        );
+
+        // 0 is Kanboard's "unassigned" sentinel for both columns, not a person.
+        return array_values(array_unique(array_filter($ids, static fn ($id) => $id > 0)));
+    }
+
+    /**
+     * Sum contribution hours per user.
+     *
+     * @return array<int,float>
+     */
+    public static function hoursByUser(array $contributions): array
+    {
+        $byUser = [];
+        foreach ($contributions as $c) {
+            $uid = (int) ($c['user_id'] ?? 0);
+            $byUser[$uid] = round(($byUser[$uid] ?? 0.0) + (float) $c['hours'], 2);
+        }
+
+        return $byUser;
+    }
+
+    /**
+     * Display names for the given ids, preferring the full name and falling back to
+     * the username, then to "#id" for a deleted user still referenced by old rows.
+     *
+     * @return array<int,string>
+     */
+    public function userNames(array $userIds): array
+    {
+        $names = [];
+        foreach (array_unique(array_map('intval', $userIds)) as $uid) {
+            if ($uid <= 0) {
+                continue;
+            }
+            $user = $this->userModel->getById($uid);
+            if (empty($user)) {
+                continue;
+            }
+            $name = trim((string) ($user['name'] ?? ''));
+            $names[$uid] = $name !== '' ? $name : (string) ($user['username'] ?? ('#' . $uid));
+        }
+
+        return $names;
+    }
+
+    /**
+     * Every user with hours in $projectId over the range, with their totals.
+     *
+     * Public entry point for callers outside report(); report() computes the same thing
+     * from rows it has already gathered, so a single request never runs discovery twice.
+     *
+     * @return array<int, array{name:string, hours:float}> Ordered by hours desc, then name.
+     */
+    public function participants(int $projectId, string $startDate, string $endDate, int $requestingUserId): array
+    {
+        $this->assertProjectAccess($projectId, $requestingUserId);
+
+        $startTs = (int) strtotime($startDate . ' 00:00:00');
+        $endTs   = (int) strtotime($endDate . ' 23:59:59');
+
+        $subtaskRows = $this->gatherSubtaskRows($projectId, $startTs, $endTs);
+        $taskRows    = $this->gatherRangeTaskRows($projectId, $startTs, $endTs);
+        $suppressed  = self::suppressedTaskIdsFromRows($this->gatherSuppressionRows($projectId));
+
+        $ids = $this->canReportOnOthers($projectId, $requestingUserId)
+            ? self::allUserIds($subtaskRows, $taskRows)
+            : [$requestingUserId];
+
+        return $this->buildParticipants($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $ids, $suppressed);
+    }
+
+    /**
+     * Group already-gathered rows into the participant panel shape.
+     *
+     * Reuses the SAME contribution union the report itself uses, so the panel's
+     * per-user totals and the report's numbers agree by construction. A divergence
+     * between the two would be a billing bug, not a cosmetic one.
+     *
+     * @return array<int, array{name:string, hours:float}>
+     */
+    private function buildParticipants(array $subtaskRows, array $taskRows, int $startTs, int $endTs, int $projectId, array $userIds, array $suppressedTaskIds): array
+    {
+        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $userIds, $suppressedTaskIds);
+
+        $hours = self::hoursByUser($contributions);
+        $names = $this->userNames(array_keys($hours));
+
+        $out = [];
+        foreach ($hours as $uid => $h) {
+            if ($uid <= 0) {
+                continue;
+            }
+            $out[$uid] = ['name' => $names[$uid] ?? ('#' . $uid), 'hours' => (float) $h];
+        }
+
+        uasort($out, static fn ($a, $b) => [$b['hours'], $a['name']] <=> [$a['hours'], $b['name']]);
+
+        return $out;
+    }
+
     /**
      * Resolve the requested scope into a subject set that is safe to report on.
      *
@@ -376,10 +483,11 @@ class TimeReportModel extends Base
         $startTs = (int) strtotime($startDate . ' 00:00:00');
         $endTs   = (int) strtotime($endDate . ' 23:59:59');
 
-        // Source 1: normalize the user's subtask time rows → map subtask→task→project.
-        $subtaskRows = $this->gatherSubtaskRows($userId, $projectId);
-        // Source 2: completed tasks assigned to the user in this project.
-        $taskRows = $this->gatherCompletedTaskRows($projectId, $userId);
+        // Source 1: project-wide subtask time rows in range (self-only filtering happens
+        // in buildContributions via the [$userId] subject set below).
+        $subtaskRows = $this->gatherSubtaskRows($projectId, $startTs, $endTs);
+        // Source 2: tasks completed in range (every owner; the subject set scopes them).
+        $taskRows = $this->gatherRangeTaskRows($projectId, $startTs, $endTs);
 
         [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, [$userId]);
 
@@ -416,35 +524,95 @@ class TimeReportModel extends Base
         return $report;
     }
 
-    /** Normalize the user's subtask time rows into the buildContributions shape (task_id + project_id resolved). */
-    private function gatherSubtaskRows(int $userId, int $projectId): array
+    /**
+     * In-range subtask time rows for the whole project, every user.
+     *
+     * Hand-rolled rather than SubtaskTimeTrackingModel::getUserQuery(), which is scoped
+     * to one user, omits user_id, and applies no range at all. The range predicate is
+     * in SQL because this query is project-wide.
+     */
+    private function gatherSubtaskRows(int $projectId, int $startTs, int $endTs): array
     {
-        // getUserQuery joins subtasks→tasks, exposing task_id and project_id.
-        $rows = $this->subtaskTimeTrackingModel->getUserQuery($userId)->findAll();
+        $table = \Kanboard\Model\SubtaskTimeTrackingModel::TABLE;
+
+        $rows = $this->db->table($table)
+            ->columns(
+                $table . '.user_id',
+                $table . '.start',
+                $table . '.end',
+                $table . '.time_spent',
+                \Kanboard\Model\SubtaskModel::TABLE . '.task_id',
+                \Kanboard\Model\TaskModel::TABLE . '.project_id'
+            )
+            ->join(\Kanboard\Model\SubtaskModel::TABLE, 'id', 'subtask_id', $table)
+            ->join(\Kanboard\Model\TaskModel::TABLE, 'id', 'task_id', \Kanboard\Model\SubtaskModel::TABLE)
+            ->eq(\Kanboard\Model\TaskModel::TABLE . '.project_id', $projectId)
+            ->gte($table . '.start', $startTs)
+            ->lte($table . '.start', $endTs)
+            ->findAll();
+
         $normalized = [];
         foreach ($rows as $r) {
-            $taskId = (int) $r['task_id'];
             $normalized[] = [
-                'task_id'    => $taskId,
+                'task_id'    => (int) $r['task_id'],
                 'project_id' => (int) $r['project_id'],
-                'user_id'    => $userId,
+                'user_id'    => (int) $r['user_id'],
                 'start'      => (int) $r['start'],
                 'end'        => (int) $r['end'],
                 'time_spent' => (float) $r['time_spent'],
             ];
         }
+
         return $normalized;
     }
 
     /**
-     * Inputs for findUntrackedSubtaskTime(): the user's subtasks in the project that
-     * carry a recorded time_spent, and the user's tracked hours per subtask.
+     * Lean, UNRANGED tracking rows used only to decide task-level fallback eligibility.
+     *
+     * Deliberately not range-bounded: tasks.time_spent is an all-time pool, so tracked
+     * time from any period disqualifies the fallback in every window. Four small
+     * columns from one indexed table — this is the cheap query, not the expensive one.
+     */
+    private function gatherSuppressionRows(int $projectId): array
+    {
+        $table = \Kanboard\Model\SubtaskTimeTrackingModel::TABLE;
+
+        $rows = $this->db->table($table)
+            ->columns($table . '.start', $table . '.end', $table . '.time_spent', \Kanboard\Model\SubtaskModel::TABLE . '.task_id')
+            ->join(\Kanboard\Model\SubtaskModel::TABLE, 'id', 'subtask_id', $table)
+            ->join(\Kanboard\Model\TaskModel::TABLE, 'id', 'task_id', \Kanboard\Model\SubtaskModel::TABLE)
+            ->eq(\Kanboard\Model\TaskModel::TABLE . '.project_id', $projectId)
+            ->findAll();
+
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'task_id'    => (int) $r['task_id'],
+                'start'      => (int) $r['start'],
+                'end'        => (int) $r['end'],
+                'time_spent' => (float) $r['time_spent'],
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Inputs for findUntrackedSubtaskTime().
+     *
+     * $ownUserId null = project-wide (the requester may see others' time); otherwise
+     * only that user's own subtasks. Scoped by PERMISSION, never by the subject set,
+     * so the warning is selection-invariant.
+     *
+     * The tracked side is deliberately unfiltered by user and unranged: subtasks.
+     * time_spent is a pool contributed to by every logger over all time, so offsetting
+     * it with one user's tracked hours would invent untracked time that does not exist.
      *
      * @return array{0: list<array{subtask_id:int,task_id:int,time_spent:float}>, 1: array<int,float>, 2: array<int,array{reference:string,title:string}>}
      */
-    private function gatherUntrackedInputs(int $projectId, int $userId): array
+    private function gatherUntrackedInputs(int $projectId, ?int $ownUserId): array
     {
-        $rows = $this->db->table(\Kanboard\Model\SubtaskModel::TABLE)
+        $query = $this->db->table(\Kanboard\Model\SubtaskModel::TABLE)
             ->columns(
                 \Kanboard\Model\SubtaskModel::TABLE . '.id',
                 \Kanboard\Model\SubtaskModel::TABLE . '.task_id',
@@ -454,9 +622,13 @@ class TimeReportModel extends Base
             )
             ->join(\Kanboard\Model\TaskModel::TABLE, 'id', 'task_id')
             ->eq(\Kanboard\Model\TaskModel::TABLE . '.project_id', $projectId)
-            ->eq(\Kanboard\Model\SubtaskModel::TABLE . '.user_id', $userId)
-            ->gt(\Kanboard\Model\SubtaskModel::TABLE . '.time_spent', 0)
-            ->findAll();
+            ->gt(\Kanboard\Model\SubtaskModel::TABLE . '.time_spent', 0);
+
+        if ($ownUserId !== null) {
+            $query->eq(\Kanboard\Model\SubtaskModel::TABLE . '.user_id', $ownUserId);
+        }
+
+        $rows = $query->findAll();
 
         $records  = [];
         $taskMeta = [];
@@ -472,9 +644,18 @@ class TimeReportModel extends Base
             ];
         }
 
-        // Sum the user's tracked hours per subtask (same hours math as the report).
+        // Tracked hours per subtask across ALL loggers and ALL time — see the docblock.
         $trackedBySubtask = [];
-        foreach ($this->subtaskTimeTrackingModel->getUserQuery($userId)->findAll() as $tt) {
+        $ttTable = \Kanboard\Model\SubtaskTimeTrackingModel::TABLE;
+
+        $ttRows = $this->db->table($ttTable)
+            ->columns($ttTable . '.subtask_id', $ttTable . '.start', $ttTable . '.end', $ttTable . '.time_spent')
+            ->join(\Kanboard\Model\SubtaskModel::TABLE, 'id', 'subtask_id', $ttTable)
+            ->join(\Kanboard\Model\TaskModel::TABLE, 'id', 'task_id', \Kanboard\Model\SubtaskModel::TABLE)
+            ->eq(\Kanboard\Model\TaskModel::TABLE . '.project_id', $projectId)
+            ->findAll();
+
+        foreach ($ttRows as $tt) {
             $sid       = (int) $tt['subtask_id'];
             $timeSpent = (float) $tt['time_spent'];
             if ($timeSpent > 0) {
@@ -490,13 +671,35 @@ class TimeReportModel extends Base
         return [$records, $trackedBySubtask, $taskMeta];
     }
 
-    /** Completed tasks assigned to $userId in $projectId (all statuses so completed/closed are included). */
-    private function gatherCompletedTaskRows(int $projectId, int $userId): array
+    /**
+     * Tasks COMPLETED in range, every owner, as a lean projection.
+     *
+     * Replaces getExtendedQuery(), which carries seven correlated COUNT(*) subqueries
+     * and ~35 columns for the nine fields this report needs. Owner-agnostic, because it
+     * feeds both the task-level fallback and the completed-task detail, and a selected
+     * user can have worked on a task somebody else owns.
+     */
+    private function gatherRangeTaskRows(int $projectId, int $startTs, int $endTs): array
     {
-        $rows = $this->taskFinderModel->getExtendedQuery()
-            ->eq(\Kanboard\Model\TaskModel::TABLE . '.project_id', $projectId)
-            ->eq(\Kanboard\Model\TaskModel::TABLE . '.owner_id', $userId)
+        $t = \Kanboard\Model\TaskModel::TABLE;
+
+        $rows = $this->db->table($t)
+            ->columns(
+                $t . '.id', $t . '.project_id', $t . '.owner_id', $t . '.time_spent',
+                $t . '.date_completed', $t . '.reference', $t . '.title', $t . '.category_id'
+            )
+            ->eq($t . '.project_id', $projectId)
+            ->gte($t . '.date_completed', $startTs)
+            ->lte($t . '.date_completed', $endTs)
             ->findAll();
+
+        // Category names resolved from a small per-project map rather than a join, so
+        // the task query stays a single-table projection.
+        $categories = [];
+        foreach ($this->categoryModel->getAll($projectId) as $c) {
+            $categories[(int) $c['id']] = (string) $c['name'];
+        }
+
         $out = [];
         foreach ($rows as $r) {
             $out[] = [
@@ -508,10 +711,42 @@ class TimeReportModel extends Base
                 'reference'      => (string) $r['reference'],
                 'title'          => (string) $r['title'],
                 'category_id'    => (int) $r['category_id'],
-                'category'       => (string) ($r['category_name'] ?? ''),
+                'category'       => $categories[(int) $r['category_id']] ?? '',
             ];
         }
+
         return $out;
+    }
+
+    /**
+     * Reference + title for specific task ids.
+     *
+     * Used for tasks a selected user contributed to that fall outside the completed-in-
+     * range set, so their breakdown label is a real title instead of "#id".
+     *
+     * @return array<int,array{reference:string,title:string}>
+     */
+    private function gatherTaskMeta(int $projectId, array $taskIds): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $taskIds)));
+        if ($ids === []) {
+            return [];
+        }
+
+        $t = \Kanboard\Model\TaskModel::TABLE;
+
+        $rows = $this->db->table($t)
+            ->columns($t . '.id', $t . '.reference', $t . '.title')
+            ->eq($t . '.project_id', $projectId)
+            ->in($t . '.id', $ids)
+            ->findAll();
+
+        $meta = [];
+        foreach ($rows as $r) {
+            $meta[(int) $r['id']] = ['reference' => (string) $r['reference'], 'title' => (string) $r['title']];
+        }
+
+        return $meta;
     }
 
     /**

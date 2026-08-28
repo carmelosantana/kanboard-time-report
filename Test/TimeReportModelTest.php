@@ -665,4 +665,77 @@ class TimeReportModelTest extends Base
         $this->assertCount(1, $out['breakdown'], 'one billable row per day regardless of who logged it');
         $this->assertSame(5.0, $out['breakdown'][0]['hours']);
     }
+
+    // --- participant discovery ---
+
+    public function testParticipantsReportsEveryUserWithHoursInRange(): void
+    {
+        $model = new TimeReportModel($this->container);
+
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Acme'], 1, true);
+        $bob = (int) $this->container['userModel']->create(['username' => 'bob', 'name' => 'Bob Jones', 'password' => 'xxxxxxxx']);
+        $this->container['projectUserRoleModel']->addUser($projectId, $bob, \Kanboard\Core\Security\Role::PROJECT_MEMBER);
+
+        $taskId = (int) $this->container['taskCreationModel']->create([
+            'title' => 'Ship it', 'project_id' => $projectId, 'owner_id' => $bob, 'time_spent' => 4.0,
+        ]);
+        $this->container['taskStatusModel']->close($taskId);
+
+        $found = $model->participants($projectId, date('Y-m-01'), date('Y-m-d'), 1);
+
+        $this->assertArrayHasKey($bob, $found, 'Bob logged time and must be discoverable');
+        $this->assertSame('Bob Jones', $found[$bob]['name']);
+        $this->assertSame(4.0, $found[$bob]['hours']);
+    }
+
+    public function testParticipantsExcludesProjectMembersWithNoHours(): void
+    {
+        $model = new TimeReportModel($this->container);
+
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Quiet'], 1, true);
+        $carol = (int) $this->container['userModel']->create(['username' => 'carol', 'name' => 'Carol', 'password' => 'xxxxxxxx']);
+        $this->container['projectUserRoleModel']->addUser($projectId, $carol, \Kanboard\Core\Security\Role::PROJECT_MEMBER);
+
+        $found = $model->participants($projectId, date('Y-m-01'), date('Y-m-d'), 1);
+
+        $this->assertArrayNotHasKey($carol, $found, 'membership alone is not participation');
+    }
+
+    /** Unassigned tasks must not manifest as a participant "#0". */
+    public function testParticipantsNeverIncludesUserZero(): void
+    {
+        $model = new TimeReportModel($this->container);
+
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Orphan'], 1, true);
+        $taskId = (int) $this->container['taskCreationModel']->create([
+            'title' => 'Nobody owns this', 'project_id' => $projectId, 'time_spent' => 9.0,
+        ]);
+        $this->container['taskStatusModel']->close($taskId);
+
+        $found = $model->participants($projectId, date('Y-m-01'), date('Y-m-d'), 1);
+
+        $this->assertArrayNotHasKey(0, $found, 'owner_id 0 is "unassigned", not a billable person');
+    }
+
+    public function testAllUserIdsDropsNonPositiveIds(): void
+    {
+        $subtaskRows = [['user_id' => 3], ['user_id' => 0]];
+        $taskRows    = [['owner_id' => 0], ['owner_id' => 5]];
+
+        $ids = TimeReportModel::allUserIds($subtaskRows, $taskRows);
+        sort($ids);
+
+        $this->assertSame([3, 5], $ids);
+    }
+
+    public function testHoursByUserGroupsContributions(): void
+    {
+        $contribs = [
+            ['task_id' => 1, 'hours' => 2.0, 'date' => '2026-03-10', 'user_id' => 1],
+            ['task_id' => 2, 'hours' => 3.0, 'date' => '2026-03-11', 'user_id' => 1],
+            ['task_id' => 3, 'hours' => 4.0, 'date' => '2026-03-12', 'user_id' => 2],
+        ];
+
+        $this->assertSame([1 => 5.0, 2 => 4.0], TimeReportModel::hoursByUser($contribs));
+    }
 }
