@@ -161,11 +161,12 @@ class TimeReportModel extends Base
     /**
      * Sum contributions into breakdown rows per the chosen granularity.
      *
-     * @param  list<array{task_id:int,hours:float,date:string}> $contributions
+     * @param  list<array{task_id:int,hours:float,date:string,user_id?:int}> $contributions
      * @param  array<int,array{reference:string,title:string}>  $taskMeta
+     * @param  array<int,array{name:string}>                    $userMeta
      * @return array{total_hours:float, breakdown: list<array{key:string,label:string,hours:float,task_count:int}>}
      */
-    public static function bucket(array $contributions, string $granularity, array $taskMeta = []): array
+    public static function bucket(array $contributions, string $granularity, array $taskMeta = [], array $userMeta = []): array
     {
         $buckets = []; // key => ['label'=>, 'hours'=>, 'tasks'=>[id=>true], 'sort'=>]
         $total = 0.0;
@@ -188,6 +189,12 @@ class TimeReportModel extends Base
                     $title = $taskMeta[$taskId]['title'] ?? '';
                     $label = $title !== '' ? ('#' . $taskId . ' ' . $title) : ('#' . $taskId);
                     $sort  = ($ref !== '' ? $ref : str_pad((string) $taskId, 12, '0', STR_PAD_LEFT));
+                    break;
+                case 'user':
+                    $uid   = (int) ($c['user_id'] ?? 0);
+                    $key   = 'u' . $uid;
+                    $label = (string) ($userMeta[$uid]['name'] ?? ('#' . $uid));
+                    $sort  = $label;
                     break;
                 case 'total':
                     $key   = 'total';

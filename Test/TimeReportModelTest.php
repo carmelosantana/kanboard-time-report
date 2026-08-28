@@ -609,4 +609,60 @@ class TimeReportModelTest extends Base
         $this->assertSame(2, $contribs[0]['user_id']);
         $this->assertSame(4.0, $contribs[0]['hours']);
     }
+
+    // --- user granularity ---
+
+    private function userContribs(): array
+    {
+        return [
+            ['task_id' => 10, 'hours' => 2.0, 'date' => '2026-03-10', 'user_id' => 1],
+            ['task_id' => 11, 'hours' => 3.0, 'date' => '2026-03-11', 'user_id' => 1],
+            ['task_id' => 10, 'hours' => 4.0, 'date' => '2026-03-12', 'user_id' => 2],
+        ];
+    }
+
+    public function testUserGranularityGroupsByPersonWithNames(): void
+    {
+        $meta = [1 => ['name' => 'Alice'], 2 => ['name' => 'Bob']];
+
+        $out = TimeReportModel::bucket($this->userContribs(), 'user', [], $meta);
+
+        $this->assertSame(9.0, $out['total_hours']);
+        $this->assertCount(2, $out['breakdown']);
+        $this->assertSame('Alice', $out['breakdown'][0]['label']);
+        $this->assertSame(5.0, $out['breakdown'][0]['hours']);
+        $this->assertSame('Bob', $out['breakdown'][1]['label']);
+        $this->assertSame(4.0, $out['breakdown'][1]['hours']);
+    }
+
+    public function testUserGranularityCountsDistinctTasksPerUser(): void
+    {
+        $meta = [1 => ['name' => 'Alice'], 2 => ['name' => 'Bob']];
+
+        $out = TimeReportModel::bucket($this->userContribs(), 'user', [], $meta);
+
+        $this->assertSame(2, $out['breakdown'][0]['task_count'], 'Alice touched tasks 10 and 11');
+        $this->assertSame(1, $out['breakdown'][1]['task_count']);
+    }
+
+    public function testUserGranularityFallsBackToHashIdWhenNameUnknown(): void
+    {
+        $out = TimeReportModel::bucket($this->userContribs(), 'user', [], []);
+
+        $this->assertSame('#1', $out['breakdown'][0]['label']);
+        $this->assertSame('#2', $out['breakdown'][1]['label']);
+    }
+
+    public function testExistingGranularitiesPoolAcrossUsers(): void
+    {
+        $contribs = [
+            ['task_id' => 10, 'hours' => 2.0, 'date' => '2026-03-10', 'user_id' => 1],
+            ['task_id' => 11, 'hours' => 3.0, 'date' => '2026-03-10', 'user_id' => 2],
+        ];
+
+        $out = TimeReportModel::bucket($contribs, 'day');
+
+        $this->assertCount(1, $out['breakdown'], 'one billable row per day regardless of who logged it');
+        $this->assertSame(5.0, $out['breakdown'][0]['hours']);
+    }
 }
