@@ -13,7 +13,7 @@ class TemplateAssetsTest extends Base
 
     public function testNoInlineScriptOrHandlersInTemplates(): void
     {
-        foreach (['form.php', 'show.php', '_breakdown.php', '_detail.php', 'header_dropdown.php', '_untracked.php'] as $f) {
+        foreach (['form.php', 'show.php', '_breakdown.php', '_detail.php', 'header_dropdown.php', '_untracked.php', '_users.php'] as $f) {
             $src = $this->tpl($f);
             $this->assertStringNotContainsString('<script', $src, "$f must not contain inline <script> (CSP)");
             $this->assertDoesNotMatchRegularExpression('/\son[a-z]+\s*=\s*["\']/i', $src, "$f must not contain inline on* handlers (CSP)");
