@@ -175,4 +175,37 @@ class TimeReportControllerTest extends Base
         $this->assertStringContainsString('AccessForbiddenException', $src, 'view catches the access exception and redirects');
         $this->assertStringContainsString('report/show', $src, 'view renders the report view');
     }
+
+    public function testScopeIntentIsForwardedNotPreResolved(): void
+    {
+        $src = $this->source();
+        $this->assertStringContainsString('user_ids', $src, 'must read the submitted user set');
+        $this->assertStringContainsString("'all'", $src, 'must honor the scope=all toggle');
+        $this->assertStringNotContainsString(
+            "participants(",
+            $src,
+            'scope=all must be forwarded as intent; resolving it here would discard the denial'
+        );
+    }
+
+    public function testQuickViewStaysSelfOnly(): void
+    {
+        $src = $this->source();
+        $this->assertMatchesRegularExpression(
+            '/function quickReport.*?report\(\s*\$projectId,[^;]*\$userId\s*\)\s*;/s',
+            $src,
+            'the one-click menu report must remain self-only'
+        );
+    }
+
+    public function testCsvExportRefusesWhenScopeWasDenied(): void
+    {
+        $src = $this->source();
+        $this->assertStringContainsString('scope_denied', $src, 'export must not stream a silently narrowed report');
+        $this->assertMatchesRegularExpression(
+            '/scope_denied.*?redirect/s',
+            $src,
+            'a denied export must redirect rather than stream a misleading billing artifact'
+        );
+    }
 }

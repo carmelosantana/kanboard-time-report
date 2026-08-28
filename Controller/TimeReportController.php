@@ -16,7 +16,7 @@ use Kanboard\Plugin\TimeReport\Model\AiGate;
  */
 class TimeReportController extends BaseController
 {
-    private const GRANULARITIES = ['day', 'week', 'task', 'total'];
+    private const GRANULARITIES = ['day', 'week', 'task', 'total', 'user'];
 
     /** The report form: project picker, range inputs, toggles. */
     public function index(): void
@@ -41,12 +41,25 @@ class TimeReportController extends BaseController
             $values['project_id'] = $selected;
         }
 
+        // Admins short-circuit; otherwise check the projects already being listed, so
+        // this adds no query beyond the getById() loop above.
+        $canReportOthers = $this->userSession->isAdmin();
+        if (! $canReportOthers) {
+            foreach (array_keys($projects) as $pid) {
+                if ($this->timeReportModel->canReportOnOthers((int) $pid, $userId)) {
+                    $canReportOthers = true;
+                    break;
+                }
+            }
+        }
+
         $this->response->html($this->helper->layout->app('TimeReport:report/form', [
-            'title'      => t('Time Report'),
-            'projects'   => $projects,
-            'ai_enabled' => $this->isAiEnabled(),
-            'profiles'   => $this->aiProfiles(),
-            'values'     => $values,
+            'title'             => t('Time Report'),
+            'projects'          => $projects,
+            'ai_enabled'        => $this->isAiEnabled(),
+            'profiles'          => $this->aiProfiles(),
+            'values'            => $values,
+            'can_report_others' => $canReportOthers,
         ]));
     }
 
@@ -108,6 +121,13 @@ class TimeReportController extends BaseController
         $this->checkCSRFForm();
         $report = $this->buildReportFromRequest();
 
+        // A CSV carries no on-screen notice, so a silently narrowed export would look
+        // like a valid team invoice covering people it does not contain. Refuse it.
+        if (! empty($report['scope_denied'])) {
+            $this->response->redirect($this->helper->url->to('TimeReportController', 'index', ['plugin' => 'TimeReport']));
+            return;
+        }
+
         $helper = $this->helper->timeReport;
         $csv = $helper->toCsv($report);
         $filename = $helper->csvFilename($report['project_name'], $report['start_date'], $report['end_date']);
@@ -137,11 +157,13 @@ class TimeReportController extends BaseController
         $includeDetail = ! empty($values['include_detail']);
         $wantsAi       = ! empty($values['include_ai_summary']) && $this->isAiEnabled();
 
+        [$subjectUserIds, $allUsers] = $this->subjectSelection($values);
+
         // Mine ONCE. Compute the detail set when the user asked to display it OR the AI
         // summary needs it, so the AI branch never re-runs report() a second time.
         // Model access-guards the project (assertProjectAccess) before any mining.
         $needDetail = $includeDetail || $wantsAi;
-        $report = $this->timeReportModel->report($projectId, $startDate, $endDate, $granularity, $needDetail, $userId);
+        $report = $this->timeReportModel->report($projectId, $startDate, $endDate, $granularity, $needDetail, $userId, $subjectUserIds, $allUsers);
 
         if ($wantsAi) {
             $profileId = $this->validProfileId($values['profile_id'] ?? null);
@@ -157,6 +179,25 @@ class TimeReportController extends BaseController
         $report['include_detail'] = $includeDetail;
 
         return $report;
+    }
+
+    /**
+     * What the request asked for: an explicit set, or the "all users" intent.
+     *
+     * scope=all is deliberately NOT resolved into ids here. The model needs the intact
+     * intent to tell "asked for the team and may not have it" (which must warn) apart
+     * from "asked only for myself" (which must not). Resolving it here would collapse
+     * the two for any user without permission on the chosen project.
+     *
+     * @return array{0: ?array, 1: bool} [explicit ids or null, all-users intent]
+     */
+    protected function subjectSelection(array $values): array
+    {
+        if (! empty($values['user_ids']) && is_array($values['user_ids'])) {
+            return [array_map('intval', $values['user_ids']), false];
+        }
+
+        return [null, ($values['scope'] ?? '') === 'all'];
     }
 
     /** AiGate delegate — overridable in tests. */
