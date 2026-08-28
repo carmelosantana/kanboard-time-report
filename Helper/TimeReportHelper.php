@@ -58,13 +58,19 @@ class TimeReportHelper extends Base
         }
 
         if (! empty($report['include_detail']) && ! empty($report['detail'])) {
+            $multi = ! empty($report['multi_user']);
             $lines[] = '';
             $lines[] = '## Completed tasks';
             $lines[] = '';
-            $lines[] = '| Ref | Title | Hours | Completed | Category | Tags |';
-            $lines[] = '| --- | --- | ---: | --- | --- | --- |';
+            $lines[] = $multi
+                ? '| Ref | Title | Assignee | Hours | Completed | Category | Tags |'
+                : '| Ref | Title | Hours | Completed | Category | Tags |';
+            $lines[] = $multi
+                ? '| --- | --- | --- | ---: | --- | --- | --- |'
+                : '| --- | --- | ---: | --- | --- | --- |';
             foreach ($report['detail'] as $d) {
-                $lines[] = '| ' . $d['reference'] . ' | ' . $d['title'] . ' | ' . $this->formatHours((float) $d['hours'])
+                $assignee = $multi ? (($d['assignee'] ?? '') . ' | ') : '';
+                $lines[] = '| ' . $d['reference'] . ' | ' . $d['title'] . ' | ' . $assignee . $this->formatHours((float) $d['hours'])
                     . ' | ' . $this->withWeekday($d['date_completed']) . ' | ' . $d['category'] . ' | ' . implode('; ', $d['tags']) . ' |';
             }
         }
@@ -101,13 +107,21 @@ class TimeReportHelper extends Base
         }
 
         if (! empty($report['include_detail']) && ! empty($report['detail'])) {
+            $multi = ! empty($report['multi_user']);
             $out[] = '';
-            $out[] = $this->csvRow(['Reference', 'Title', 'Hours', 'Completed', 'Category', 'Tags']);
+            $out[] = $multi
+                ? $this->csvRow(['Reference', 'Title', 'Assignee', 'Hours', 'Completed', 'Category', 'Tags'])
+                : $this->csvRow(['Reference', 'Title', 'Hours', 'Completed', 'Category', 'Tags']);
             foreach ($report['detail'] as $d) {
-                $out[] = $this->csvRow([
-                    $d['reference'], $d['title'], $this->formatHours((float) $d['hours']),
-                    $d['date_completed'], $d['category'], implode('; ', $d['tags']),
-                ]);
+                $fields = [$d['reference'], $d['title']];
+                if ($multi) {
+                    $fields[] = (string) ($d['assignee'] ?? '');
+                }
+                $fields[] = $this->formatHours((float) $d['hours']);
+                $fields[] = $d['date_completed'];
+                $fields[] = $d['category'];
+                $fields[] = implode('; ', $d['tags']);
+                $out[] = $this->csvRow($fields);
             }
         }
 
@@ -129,6 +143,7 @@ class TimeReportHelper extends Base
         return match ($granularity) {
             'week'  => 'Week',
             'task'  => 'Task',
+            'user'  => 'User',
             'total' => 'Total',
             default => 'Day',
         };
