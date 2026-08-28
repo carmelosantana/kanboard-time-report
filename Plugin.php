@@ -5,6 +5,7 @@ namespace Kanboard\Plugin\TimeReport;
 use Kanboard\Core\Plugin\Base;
 use Kanboard\Plugin\TimeReport\Model\AiGate;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryModel;
+use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
 use Kanboard\Plugin\TimeReport\Helper\TimeReportHelper;
 
@@ -26,6 +27,9 @@ class Plugin extends Base
         };
         $this->container['aiSummaryModel'] = function ($c) {
             return new AiSummaryModel($c);
+        };
+        $this->container['aiSummaryCache'] = function ($c) {
+            return new AiSummaryCache($c);
         };
 
         // ── Template helper: $this->helper->timeReport->formatHours(...) ──────
