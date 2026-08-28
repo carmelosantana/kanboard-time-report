@@ -119,4 +119,54 @@ class AiSummaryModelTest extends Base
         $this->assertSame('Task done.', $out['summary']);
         $this->assertSame(['Shipped'], $out['highlights']);
     }
+
+    // ── Task 6: aggregate (summary-of-summaries) ───────────────────────────────
+
+    public function testBuildAggregateMessagesComposesFromMemberSummaries(): void
+    {
+        $members = [
+            ['title' => 'Build API', 'summary' => 'Implemented the REST endpoints.', 'highlights' => ['Endpoints live']],
+            ['title' => 'Fix bug', 'summary' => 'Resolved the login crash.', 'highlights' => []],
+        ];
+        $m = new AiSummaryModel($this->container);
+        $messages = $m->buildAggregateMessages('day', '2026-03-10', $members);
+        $userBlob = $messages[1]['content'];
+        $this->assertStringContainsString('Implemented the REST endpoints.', $userBlob);
+        $this->assertStringContainsString('Resolved the login crash.', $userBlob);
+        $this->assertStringContainsString('2026-03-10', $userBlob);
+    }
+
+    /** No raw task data is re-sent: only the member summaries/highlights/titles compose the payload. */
+    public function testBuildAggregateMessagesDoesNotResendRawTaskData(): void
+    {
+        $members = [
+            ['title' => 'Build API', 'summary' => 'Did the work.', 'highlights' => []],
+        ];
+        $m = new AiSummaryModel($this->container);
+        $userBlob = $m->buildAggregateMessages('week', '2026-W11', $members)[1]['content'];
+        $this->assertStringNotContainsString('date_completed', $userBlob, 'aggregate must not carry raw task fields');
+        $this->assertStringNotContainsString('subtasks', $userBlob);
+        $this->assertStringNotContainsString('category', $userBlob);
+    }
+
+    public function testBuildAggregateMessagesSkipsEmptyMembers(): void
+    {
+        $members = [
+            ['title' => 'Empty', 'summary' => '', 'highlights' => []],
+            ['title' => 'Real', 'summary' => 'Something happened.', 'highlights' => []],
+        ];
+        $m = new AiSummaryModel($this->container);
+        $userBlob = $m->buildAggregateMessages('day', 'D', $members)[1]['content'];
+        $this->assertStringContainsString('Something happened.', $userBlob);
+        $this->assertStringNotContainsString('Empty', $userBlob, 'members with no content are dropped');
+    }
+
+    public function testSummarizeAggregateReturnsNormalized(): void
+    {
+        $m = new AiSummaryModel($this->container);
+        $m->setRegistry($this->fakeRegistry(['summary' => 'A productive day.', 'highlights' => ['Two tasks done']]));
+        $out = $m->summarizeAggregate('day', '2026-03-10', [['summary' => 's', 'highlights' => []]]);
+        $this->assertSame('A productive day.', $out['summary']);
+        $this->assertSame(['Two tasks done'], $out['highlights']);
+    }
 }
