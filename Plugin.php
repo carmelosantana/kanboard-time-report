@@ -47,6 +47,11 @@ class Plugin extends Base
         // ── Entry links in the project ≡ menu (core passes $project) ──────────
         $this->template->hook->attach('template:project:dropdown', 'TimeReport:project/menu');
 
+        // ── Admin opt-in on Settings → Integrations (off by default) ──────────
+        // Governs whether task descriptions are gathered and forwarded to the AI
+        // provider. Persisted via core ConfigController::save (redirect=integrations).
+        $this->template->hook->attach('template:config:integrations', 'TimeReport:config/integrations');
+
         // ── Assets (CSP-safe: external files, delegated JS) ───────────────────
         $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/timereport.css']);
         $this->hook->on('template:layout:js', ['template' => 'plugins/TimeReport/Assets/js/timereport.js']);
