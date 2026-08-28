@@ -13,7 +13,7 @@ class PluginMetaTest extends Base
 
     public function testVersionIsExactly120(): void
     {
-        $this->assertSame('1.2.0', $this->json()['version']);
+        $this->assertSame('1.3.0', $this->json()['version']);
     }
 
     public function testNameAndCompat(): void

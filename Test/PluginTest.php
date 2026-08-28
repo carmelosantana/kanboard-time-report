@@ -12,7 +12,7 @@ class PluginTest extends Base
     {
         $plugin = new Plugin($this->container);
         $this->assertSame('TimeReport', $plugin->getPluginName());
-        $this->assertSame('1.2.0', $plugin->getPluginVersion());
+        $this->assertSame('1.3.0', $plugin->getPluginVersion());
         $this->assertSame('Carmelo Santana', $plugin->getPluginAuthor());
         $this->assertSame('>=1.2.47', $plugin->getCompatibleVersion());
         $this->assertNotEmpty($plugin->getPluginDescription());
@@ -24,7 +24,7 @@ class PluginTest extends Base
         $json = json_decode(file_get_contents(dirname(__DIR__) . '/plugin.json'), true);
         $plugin = new Plugin($this->container);
         $this->assertSame($json['version'], $plugin->getPluginVersion(), 'Plugin.php version must equal plugin.json version');
-        $this->assertSame('1.2.0', $json['version']);
+        $this->assertSame('1.3.0', $json['version']);
     }
 
     public function testPhpGate(): void
