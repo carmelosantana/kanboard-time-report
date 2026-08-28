@@ -4,6 +4,7 @@ namespace Kanboard\Plugin\TimeReport\Model;
 
 use Kanboard\Core\Base;
 use Kanboard\Core\Controller\AccessForbiddenException;
+use Kanboard\Core\Security\Role;
 
 /**
  * TimeReportModel — computes a deduped hours union and buckets it.
@@ -233,6 +234,75 @@ class TimeReportModel extends Base
             'total_hours'   => (float) $total,
             'tasks'         => $tasks,
         ];
+    }
+
+    /**
+     * May $userId include OTHER users' hours in reports for $projectId?
+     *
+     * App administrators always may. Otherwise the requester must hold the
+     * project-manager role on this specific project. Note that app-manager is
+     * deliberately NOT sufficient: it confers project creation, not visibility
+     * into an existing project's time.
+     */
+    public function canReportOnOthers(int $projectId, int $userId): bool
+    {
+        if ($this->userSession->isAdmin()) {
+            return true;
+        }
+
+        return $this->projectUserRoleModel->getUserRole($projectId, $userId) === Role::PROJECT_MANAGER;
+    }
+
+    /**
+     * Resolve the requested scope into a subject set that is safe to report on.
+     *
+     * $allUsers carries the "every participant" INTENT rather than a pre-resolved id
+     * list. That distinction is what makes denial visible: an unauthorized request for
+     * the whole team must raise $scopeDenied, not quietly collapse to a set of one that
+     * looks like it was never asking for anyone else.
+     *
+     * Fail-closed: without permission the set collapses to the requester alone and
+     * $scopeDenied is raised so the UI can say so out loud (silently narrowing would
+     * under-bill with no signal). Requested ids are also intersected with actual
+     * participants, so a tampered user_ids[] can neither read a stranger's hours nor
+     * probe for the existence of a user id.
+     *
+     * @param  ?array $requested       Explicit ids from the request; null when none given.
+     * @param  bool   $allUsers        The scope=all intent.
+     * @param  array  $participantIds  Ids with hours in this project + range.
+     * @return array{0: list<int>, 1: bool}  [subject ids, scope denied]
+     */
+    public static function sanitizeSubjectUserIds(?array $requested, bool $allUsers, int $requestingUserId, array $participantIds, bool $canReportOnOthers): array
+    {
+        // 0 is Kanboard's "unassigned" sentinel, never a person to report on.
+        $requestedIds = $requested === null
+            ? null
+            : array_values(array_unique(array_filter(array_map('intval', $requested), static fn ($id) => $id > 0)));
+
+        $wantsOthers = $allUsers
+            || ($requestedIds !== null && $requestedIds !== [] && array_diff($requestedIds, [$requestingUserId]) !== []);
+
+        if (! $canReportOnOthers) {
+            return [[$requestingUserId], $wantsOthers];
+        }
+
+        $participants = array_values(array_unique(array_map('intval', $participantIds)));
+
+        if ($allUsers) {
+            $resolved = $participants;
+        } elseif ($requestedIds === null) {
+            return [[$requestingUserId], false];
+        } else {
+            $resolved = array_values(array_intersect($requestedIds, $participants));
+        }
+
+        if ($resolved === []) {
+            return [[$requestingUserId], false];
+        }
+
+        sort($resolved);
+
+        return [$resolved, false];
     }
 
     /** Throw unless $projectId is one the user may access. Always call first. */

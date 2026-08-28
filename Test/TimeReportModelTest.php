@@ -389,4 +389,70 @@ class TimeReportModelTest extends Base
         $this->assertSame(0, $report['untracked']['task_count']);
         $this->assertSame([], $report['untracked']['tasks']);
     }
+
+    // --- sanitizeSubjectUserIds (pure) ---
+
+    public function testNullRequestMeansSelfOnlyAndIsNotDenied(): void
+    {
+        [$ids, $denied] = TimeReportModel::sanitizeSubjectUserIds(null, false, 7, [7, 8, 9], true);
+        $this->assertSame([7], $ids);
+        $this->assertFalse($denied);
+    }
+
+    public function testWithoutPermissionRequestingOthersNarrowsToSelfAndFlagsDenied(): void
+    {
+        [$ids, $denied] = TimeReportModel::sanitizeSubjectUserIds([7, 8], false, 7, [7, 8], false);
+        $this->assertSame([7], $ids);
+        $this->assertTrue($denied, 'asking for another user without permission must be visible');
+    }
+
+    /** The regression for the "scope=all silently narrows" hole. */
+    public function testWithoutPermissionScopeAllIsDeniedNotSilentlySelfOnly(): void
+    {
+        [$ids, $denied] = TimeReportModel::sanitizeSubjectUserIds(null, true, 7, [], false);
+        $this->assertSame([7], $ids);
+        $this->assertTrue($denied, 'asking for ALL users without permission must be flagged, not silently narrowed');
+    }
+
+    public function testWithoutPermissionRequestingOnlySelfIsNotDenied(): void
+    {
+        [$ids, $denied] = TimeReportModel::sanitizeSubjectUserIds([7], false, 7, [7], false);
+        $this->assertSame([7], $ids);
+        $this->assertFalse($denied);
+    }
+
+    public function testWithPermissionScopeAllResolvesToEveryParticipant(): void
+    {
+        [$ids, $denied] = TimeReportModel::sanitizeSubjectUserIds(null, true, 7, [9, 7, 8], true);
+        $this->assertSame([7, 8, 9], $ids);
+        $this->assertFalse($denied);
+    }
+
+    public function testWithPermissionRequestedSetIsHonoredAndSorted(): void
+    {
+        [$ids, $denied] = TimeReportModel::sanitizeSubjectUserIds([9, 7], false, 7, [7, 8, 9], true);
+        $this->assertSame([7, 9], $ids);
+        $this->assertFalse($denied);
+    }
+
+    public function testNonParticipantIdsAreDropped(): void
+    {
+        // 42 never logged time here — must not be reported on, and must not error.
+        [$ids, $denied] = TimeReportModel::sanitizeSubjectUserIds([7, 42], false, 7, [7, 8], true);
+        $this->assertSame([7], $ids);
+        $this->assertFalse($denied);
+    }
+
+    public function testEmptyResolvedSetFallsBackToSelfNotEveryone(): void
+    {
+        [$ids, $denied] = TimeReportModel::sanitizeSubjectUserIds([42], false, 7, [7, 8], true);
+        $this->assertSame([7], $ids);
+        $this->assertFalse($denied);
+    }
+
+    public function testDuplicateAndStringIdsAreNormalized(): void
+    {
+        [$ids] = TimeReportModel::sanitizeSubjectUserIds(['8', 8, '7'], false, 7, [7, 8], true);
+        $this->assertSame([7, 8], $ids);
+    }
 }
