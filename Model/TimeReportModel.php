@@ -17,26 +17,60 @@ use Kanboard\Core\Security\Role;
 class TimeReportModel extends Base
 {
     /**
-     * Build the deduped flat contribution list.
+     * Task ids disqualified from the task-level fallback, from lean tracking rows.
      *
-     * Source 1 (granular truth): subtask time rows for the user whose task is in
-     * $projectId and whose start ts is in [$startTs,$endTs]. Each contributes
-     * time_spent (hours) or (end-start)/3600 when time_spent is 0, dated by start.
-     * Every such in-range task id is recorded in $subtaskTaskIds.
+     * Fed by an UNRANGED query: tasks.time_spent is an all-time pool, so tracked time
+     * from any period and any user disqualifies the fallback in every report window.
+     * Applies the same round-to-2dp rule as the contribution math, so a two-second
+     * timer toggle neither counts as work nor hides a real fallback.
      *
-     * Source 2 (fallback): tasks in $projectId owned by the user with time_spent>0
-     * and date_completed in range whose id is NOT in $subtaskTaskIds. Contributes
-     * the full time_spent, dated by date_completed.
-     *
-     * @return array{0: list<array{task_id:int,hours:float,date:string}>, 1: array<int,bool>}
+     * @param  list<array{task_id:int,start:int,end:int,time_spent:float}> $rows
+     * @return array<int,bool>
      */
-    public static function buildContributions(array $subtaskRows, array $taskRows, int $startTs, int $endTs, int $projectId, int $userId): array
+    public static function suppressedTaskIdsFromRows(array $rows): array
+    {
+        $suppressed = [];
+        foreach ($rows as $row) {
+            $timeSpent = (float) $row['time_spent'];
+            if ($timeSpent > 0) {
+                $hours = $timeSpent;
+            } else {
+                $start = (int) $row['start'];
+                $end   = (int) $row['end'];
+                $hours = $end > $start ? ($end - $start) / 3600 : 0.0;
+            }
+            if (round($hours, 2) > 0) {
+                $suppressed[(int) $row['task_id']] = true;
+            }
+        }
+
+        return $suppressed;
+    }
+
+    /**
+     * Build the deduped flat contribution list for the SELECTED users.
+     *
+     * $subtaskRows and $taskRows are PROJECT-WIDE (every user). $userIds governs only
+     * which contributions are emitted — never which rows are seen. That separation is
+     * load-bearing: tasks.time_spent is SUM(subtasks.time_spent) across all users and
+     * all time, so building suppression from the selected users' in-range rows alone
+     * lets an excluded user's time resurface as the owner's fallback — which would make
+     * narrowing the set INCREASE the total.
+     *
+     * $suppressedTaskIds supplies all-time eligibility from an unranged query; rows
+     * seen in range are merged into it. Pass it whenever the report window could
+     * exclude tracking that still disqualifies a fallback.
+     *
+     * @return array{0: list<array{task_id:int,hours:float,date:string,user_id:int}>, 1: array<int,bool>}
+     */
+    public static function buildContributions(array $subtaskRows, array $taskRows, int $startTs, int $endTs, int $projectId, array $userIds, array $suppressedTaskIds = []): array
     {
         $contributions = [];
-        $subtaskTaskIds = [];
+        $suppressed    = $suppressedTaskIds;
+        $selected      = array_flip(array_filter(array_map('intval', $userIds), static fn ($id) => $id > 0));
 
         foreach ($subtaskRows as $row) {
-            if ((int) $row['project_id'] !== $projectId || (int) $row['user_id'] !== $userId) {
+            if ((int) $row['project_id'] !== $projectId) {
                 continue;
             }
             $start = (int) $row['start'];
@@ -52,26 +86,33 @@ class TimeReportModel extends Base
                 $hours = $end > $start ? ($end - $start) / 3600 : 0.0;
             }
 
-            // An entry that rounds to 0.00h at the report's own 2-dp precision represents no
-            // logged work — a still-running timer, or an instant start/stop toggle that spans
-            // only a second or two. It does NOT count as subtask time for dedup and adds no
-            // contribution, so it can never hide a task's real task-level time_spent fallback.
+            // An entry that rounds to 0.00h at the report's own precision represents no
+            // logged work — a still-running timer, or an instant start/stop toggle.
             if (round($hours, 2) <= 0) {
                 continue;
             }
 
             $taskId = (int) $row['task_id'];
-            $subtaskTaskIds[$taskId] = true;
+
+            // Suppression deliberately precedes the user filter.
+            $suppressed[$taskId] = true;
+
+            if (! isset($selected[(int) $row['user_id']])) {
+                continue;
+            }
 
             $contributions[] = [
                 'task_id' => $taskId,
                 'hours'   => (float) $hours,
                 'date'    => date('Y-m-d', $start),
+                'user_id' => (int) $row['user_id'],
             ];
         }
 
         foreach ($taskRows as $task) {
-            if ((int) $task['project_id'] !== $projectId || (int) $task['owner_id'] !== $userId) {
+            $ownerId = (int) $task['owner_id'];
+            // owner_id 0 means UNASSIGNED, not a person: its pool is unattributable.
+            if ((int) $task['project_id'] !== $projectId || $ownerId <= 0 || ! isset($selected[$ownerId])) {
                 continue;
             }
             $timeSpent = (float) $task['time_spent'];
@@ -83,18 +124,19 @@ class TimeReportModel extends Base
                 continue;
             }
             $taskId = (int) $task['id'];
-            if (isset($subtaskTaskIds[$taskId])) {
-                continue; // dedup: represented by source 1
+            if (isset($suppressed[$taskId])) {
+                continue; // dedup: already represented by tracked subtask time
             }
 
             $contributions[] = [
                 'task_id' => $taskId,
                 'hours'   => $timeSpent,
                 'date'    => date('Y-m-d', $completed),
+                'user_id' => $ownerId,
             ];
         }
 
-        return [$contributions, $subtaskTaskIds];
+        return [$contributions, $suppressed];
     }
 
     public static function dayKey(int $ts): string
@@ -332,7 +374,7 @@ class TimeReportModel extends Base
         // Source 2: completed tasks assigned to the user in this project.
         $taskRows = $this->gatherCompletedTaskRows($projectId, $userId);
 
-        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $userId);
+        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, [$userId]);
 
         // Task meta for `task` granularity labels.
         $taskMeta = [];

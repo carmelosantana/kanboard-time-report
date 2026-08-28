@@ -30,7 +30,7 @@ class TimeReportModelTest extends Base
             ['id' => 10, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 8.0, 'date_completed' => $this->ts('2026-03-12 17:00:00')],
         ];
 
-        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1]);
 
         $this->assertTrue($subtaskTaskIds[10]);
         $this->assertCount(1, $contribs);
@@ -44,7 +44,7 @@ class TimeReportModelTest extends Base
         $taskRows = [
             ['id' => 20, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 4.5, 'date_completed' => $this->ts('2026-03-15 12:00:00')],
         ];
-        [$contribs] = TimeReportModel::buildContributions([], $taskRows, $this->startTs, $this->endTs, 5, 1);
+        [$contribs] = TimeReportModel::buildContributions([], $taskRows, $this->startTs, $this->endTs, 5, [1]);
 
         $this->assertCount(1, $contribs);
         $this->assertSame(20, $contribs[0]['task_id']);
@@ -57,7 +57,7 @@ class TimeReportModelTest extends Base
         $taskRows = [
             ['id' => 30, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 3.0, 'date_completed' => $this->ts('2026-04-02 12:00:00')],
         ];
-        [$contribs] = TimeReportModel::buildContributions([], $taskRows, $this->startTs, $this->endTs, 5, 1);
+        [$contribs] = TimeReportModel::buildContributions([], $taskRows, $this->startTs, $this->endTs, 5, [1]);
         $this->assertSame([], $contribs);
     }
 
@@ -70,7 +70,7 @@ class TimeReportModelTest extends Base
         $taskRows = [
             ['id' => 40, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 6.0, 'date_completed' => $this->ts('2026-03-20 12:00:00')],
         ];
-        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1]);
 
         $this->assertArrayNotHasKey(40, $subtaskTaskIds);
         $this->assertCount(1, $contribs);
@@ -88,7 +88,7 @@ class TimeReportModelTest extends Base
             ['id' => 52, 'project_id' => 99, 'owner_id' => 1, 'time_spent' => 2.0, 'date_completed' => $this->ts('2026-03-05 12:00:00')],
             ['id' => 53, 'project_id' => 5,  'owner_id' => 2, 'time_spent' => 2.0, 'date_completed' => $this->ts('2026-03-05 12:00:00')],
         ];
-        [$contribs] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+        [$contribs] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1]);
         $this->assertSame([], $contribs);
     }
 
@@ -97,7 +97,7 @@ class TimeReportModelTest extends Base
         $subtaskRows = [
             ['task_id' => 60, 'project_id' => 5, 'user_id' => 1, 'start' => $this->ts('2026-03-08 09:00:00'), 'end' => $this->ts('2026-03-08 12:30:00'), 'time_spent' => 0.0],
         ];
-        [$contribs] = TimeReportModel::buildContributions($subtaskRows, [], $this->startTs, $this->endTs, 5, 1);
+        [$contribs] = TimeReportModel::buildContributions($subtaskRows, [], $this->startTs, $this->endTs, 5, [1]);
         $this->assertSame(1, count($contribs));
         $this->assertEqualsWithDelta(3.5, $contribs[0]['hours'], 0.0001);
     }
@@ -114,7 +114,7 @@ class TimeReportModelTest extends Base
         $taskRows = [
             ['id' => 61, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 7.17, 'date_completed' => $this->ts('2026-03-20 17:00:00')],
         ];
-        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1]);
 
         $this->assertArrayNotHasKey(61, $subtaskTaskIds, 'a zero-hour subtask entry must not mark the task for dedup');
         $this->assertCount(1, $contribs, 'only the task-level fallback should contribute');
@@ -136,7 +136,7 @@ class TimeReportModelTest extends Base
         $taskRows = [
             ['id' => 63, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 7.17, 'date_completed' => $this->ts('2026-03-20 17:00:00')],
         ];
-        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1]);
 
         $this->assertArrayNotHasKey(63, $subtaskTaskIds, 'sub-precision timer toggles must not mark the task for dedup');
         $this->assertCount(1, $contribs);
@@ -154,7 +154,7 @@ class TimeReportModelTest extends Base
         $taskRows = [
             ['id' => 70, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 9.0, 'date_completed' => $this->ts('2026-03-20 17:00:00')],
         ];
-        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, 1);
+        [$contribs, $subtaskTaskIds] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1]);
 
         $this->assertTrue($subtaskTaskIds[70], 'a real 15-minute entry counts as subtask time and dedups the fallback');
         $this->assertCount(1, $contribs);
@@ -454,5 +454,159 @@ class TimeReportModelTest extends Base
     {
         [$ids] = TimeReportModel::sanitizeSubjectUserIds(['8', 8, '7'], false, 7, [7, 8], true);
         $this->assertSame([7, 8], $ids);
+    }
+
+    // --- multi-user contributions ---
+
+    public function testContributionsCarryUserAttribution(): void
+    {
+        $subtaskRows = [
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 1, 'start' => $this->ts('2026-03-10 09:00:00'), 'end' => $this->ts('2026-03-10 11:00:00'), 'time_spent' => 2.0],
+        ];
+
+        [$contribs] = TimeReportModel::buildContributions($subtaskRows, [], $this->startTs, $this->endTs, 5, [1]);
+
+        $this->assertSame(1, $contribs[0]['user_id']);
+    }
+
+    public function testTwoUsersBothContributeWhenBothSelected(): void
+    {
+        $subtaskRows = [
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 1, 'start' => $this->ts('2026-03-10 09:00:00'), 'end' => $this->ts('2026-03-10 11:00:00'), 'time_spent' => 2.0],
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 2, 'start' => $this->ts('2026-03-11 09:00:00'), 'end' => $this->ts('2026-03-11 12:00:00'), 'time_spent' => 3.0],
+        ];
+
+        [$contribs] = TimeReportModel::buildContributions($subtaskRows, [], $this->startTs, $this->endTs, 5, [1, 2]);
+
+        $this->assertCount(2, $contribs);
+        $this->assertSame(5.0, array_sum(array_column($contribs, 'hours')));
+    }
+
+    public function testUnselectedUsersAreExcluded(): void
+    {
+        $subtaskRows = [
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 1, 'start' => $this->ts('2026-03-10 09:00:00'), 'end' => $this->ts('2026-03-10 11:00:00'), 'time_spent' => 2.0],
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 2, 'start' => $this->ts('2026-03-11 09:00:00'), 'end' => $this->ts('2026-03-11 12:00:00'), 'time_spent' => 3.0],
+        ];
+
+        [$contribs] = TimeReportModel::buildContributions($subtaskRows, [], $this->startTs, $this->endTs, 5, [1]);
+
+        $this->assertCount(1, $contribs);
+        $this->assertSame(1, $contribs[0]['user_id']);
+    }
+
+    /**
+     * REGRESSION: an excluded user's tracked time must never resurface as the task
+     * owner's task-level fallback. tasks.time_spent is SUM(subtasks.time_spent) over
+     * ALL users, so suppression must ignore the user filter.
+     */
+    public function testExcludedLoggersTimeIsNotRebilledToTheTaskOwner(): void
+    {
+        // Bob (2) logged every hour. Alice (1) merely owns the task.
+        $subtaskRows = [
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 2, 'start' => $this->ts('2026-03-10 09:00:00'), 'end' => $this->ts('2026-03-10 11:00:00'), 'time_spent' => 2.0],
+        ];
+        $taskRows = [
+            ['id' => 10, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 2.0, 'date_completed' => $this->ts('2026-03-12 17:00:00')],
+        ];
+
+        [$contribs] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1]);
+
+        $this->assertSame([], $contribs, "Alice logged nothing; Bob's hours must not be billed to her");
+    }
+
+    /**
+     * REGRESSION: the same defect across a period boundary. tasks.time_spent is an
+     * ALL-TIME pool, so tracked time outside the report range still disqualifies the
+     * task-level fallback inside it.
+     */
+    public function testTrackedTimeOutsideTheRangeStillSuppressesTheFallback(): void
+    {
+        // Bob tracked in February; the Alice-owned task completed in March.
+        $februaryRows = [
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 2, 'start' => $this->ts('2026-02-10 09:00:00'), 'end' => $this->ts('2026-02-10 11:00:00'), 'time_spent' => 2.0],
+        ];
+        $taskRows = [
+            ['id' => 10, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 2.0, 'date_completed' => $this->ts('2026-03-12 17:00:00')],
+        ];
+
+        $suppressed = TimeReportModel::suppressedTaskIdsFromRows($februaryRows);
+
+        // The March query returns no tracking rows at all — suppression must come from
+        // the all-time set, not from the in-range rows.
+        [$contribs] = TimeReportModel::buildContributions([], $taskRows, $this->startTs, $this->endTs, 5, [1], $suppressed);
+
+        $this->assertSame([], $contribs, "February's tracked time must still disqualify March's fallback");
+    }
+
+    public function testSuppressionIgnoresRowsThatRoundToZero(): void
+    {
+        // A two-second timer toggle is not work and must not suppress a real fallback.
+        $rows = [
+            ['task_id' => 10, 'start' => $this->ts('2026-02-10 09:00:00'), 'end' => $this->ts('2026-02-10 09:00:02'), 'time_spent' => 0.0],
+        ];
+
+        $this->assertSame([], TimeReportModel::suppressedTaskIdsFromRows($rows));
+    }
+
+    /** Deselecting a user must only ever REMOVE hours. */
+    public function testNarrowingTheUserSetNeverIncreasesTheTotal(): void
+    {
+        $subtaskRows = [
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 2, 'start' => $this->ts('2026-03-10 09:00:00'), 'end' => $this->ts('2026-03-10 11:00:00'), 'time_spent' => 2.0],
+        ];
+        $taskRows = [
+            ['id' => 10, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 2.0, 'date_completed' => $this->ts('2026-03-12 17:00:00')],
+        ];
+
+        [$both] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1, 2]);
+        [$one]  = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1]);
+
+        $this->assertLessThanOrEqual(
+            array_sum(array_column($both, 'hours')),
+            array_sum(array_column($one, 'hours'))
+        );
+    }
+
+    /** Unassigned tasks (owner_id 0) carry no attributable time. */
+    public function testUnassignedTaskFallbackIsNeverEmitted(): void
+    {
+        $taskRows = [
+            ['id' => 77, 'project_id' => 5, 'owner_id' => 0, 'time_spent' => 9.0, 'date_completed' => $this->ts('2026-03-05 12:00:00')],
+        ];
+
+        [$contribs] = TimeReportModel::buildContributions([], $taskRows, $this->startTs, $this->endTs, 5, [0, 1]);
+
+        $this->assertSame([], $contribs, 'user 0 is "unassigned", not a person to bill');
+    }
+
+    public function testTaskLevelFallbackIsSuppressedByAnyUsersSubtaskTime(): void
+    {
+        $subtaskRows = [
+            ['task_id' => 10, 'project_id' => 5, 'user_id' => 2, 'start' => $this->ts('2026-03-10 09:00:00'), 'end' => $this->ts('2026-03-10 11:00:00'), 'time_spent' => 2.0],
+        ];
+        $taskRows = [
+            ['id' => 10, 'project_id' => 5, 'owner_id' => 1, 'time_spent' => 8.0, 'date_completed' => $this->ts('2026-03-12 17:00:00')],
+        ];
+
+        [$contribs] = TimeReportModel::buildContributions($subtaskRows, $taskRows, $this->startTs, $this->endTs, 5, [1, 2]);
+
+        $this->assertCount(1, $contribs);
+        $this->assertSame(2.0, $contribs[0]['hours']);
+        $this->assertSame(2, $contribs[0]['user_id']);
+    }
+
+    /** With no tracked time at all, the task-level pool is attributed to the owner. */
+    public function testTaskLevelFallbackIsAttributedToTheTaskOwner(): void
+    {
+        $taskRows = [
+            ['id' => 11, 'project_id' => 5, 'owner_id' => 2, 'time_spent' => 4.0, 'date_completed' => $this->ts('2026-03-12 17:00:00')],
+        ];
+
+        [$contribs] = TimeReportModel::buildContributions([], $taskRows, $this->startTs, $this->endTs, 5, [1, 2]);
+
+        $this->assertCount(1, $contribs);
+        $this->assertSame(2, $contribs[0]['user_id']);
+        $this->assertSame(4.0, $contribs[0]['hours']);
     }
 }
