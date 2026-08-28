@@ -881,4 +881,58 @@ class TimeReportModelTest extends Base
         $this->assertNotEmpty($report['detail'], 'the task Bob worked on must appear in detail');
         $this->assertSame($taskId, $report['detail'][0]['task_id']);
     }
+
+    // ── Task 1: subtask gathering + DetailRow extension ────────────────────────
+
+    public function testGatherSubtasksForTasksGroupsByTaskWithHours(): void
+    {
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'Subs'], 1, true);
+        $taskId = (int) $this->container['taskCreationModel']->create(['title' => 'Parent', 'project_id' => $projectId]);
+        $s1 = (int) $this->container['subtaskModel']->create(['task_id' => $taskId, 'title' => 'First sub', 'status' => 2]);
+        $s2 = (int) $this->container['subtaskModel']->create(['task_id' => $taskId, 'title' => 'Second sub']);
+        $this->container['db']->table('subtasks')->eq('id', $s1)->update(['time_spent' => 1.5]);
+        $this->container['db']->table('subtasks')->eq('id', $s2)->update(['time_spent' => 0.0]);
+
+        $model = new TimeReportModel($this->container);
+        $grouped = $model->gatherSubtasksForTasks([$taskId]);
+
+        $this->assertArrayHasKey($taskId, $grouped);
+        $this->assertCount(2, $grouped[$taskId]);
+        $titles = array_column($grouped[$taskId], 'title');
+        $this->assertContains('First sub', $titles);
+        $this->assertContains('Second sub', $titles);
+        // hours mirror recorded time_spent
+        $byTitle = [];
+        foreach ($grouped[$taskId] as $s) { $byTitle[$s['title']] = $s; }
+        $this->assertSame(1.5, $byTitle['First sub']['hours']);
+        $this->assertSame(2, $byTitle['First sub']['status']);
+    }
+
+    public function testGatherSubtasksForTasksEmptyForNoIds(): void
+    {
+        $model = new TimeReportModel($this->container);
+        $this->assertSame([], $model->gatherSubtasksForTasks([]));
+    }
+
+    public function testBuildDetailAttachesSubtasksAndDescriptionField(): void
+    {
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'DetailSubs'], 1, true);
+        $taskId = (int) $this->container['taskCreationModel']->create([
+            'title' => 'Ship it', 'project_id' => $projectId, 'owner_id' => 1,
+            'description' => 'Sensitive internal description',
+            'time_spent' => 3.0,
+        ]);
+        $this->container['taskStatusModel']->close($taskId);
+
+        $model = new TimeReportModel($this->container);
+        $report = $model->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', true, 1);
+
+        $this->assertNotEmpty($report['detail']);
+        $row = $report['detail'][0];
+        $this->assertArrayHasKey('subtasks', $row, 'detail rows carry a subtasks list');
+        $this->assertIsArray($row['subtasks']);
+        $this->assertArrayHasKey('description', $row, 'detail rows carry a description field');
+        // Opt-in defaults OFF → description must never be gathered.
+        $this->assertSame('', $row['description'], 'description is empty when the admin opt-in is off');
+    }
 }

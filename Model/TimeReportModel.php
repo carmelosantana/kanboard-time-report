@@ -489,7 +489,7 @@ class TimeReportModel extends Base
 
         // Gathered ONCE. The subject set decides what is emitted, never what is seen.
         $subtaskRows = $this->gatherSubtaskRows($projectId, $startTs, $endTs);
-        $taskRows    = $this->gatherRangeTaskRows($projectId, $startTs, $endTs);
+        $taskRows    = $this->gatherRangeTaskRows($projectId, $startTs, $endTs, $includeDetail && $this->sendDescriptionsEnabled());
         $suppressed  = self::suppressedTaskIdsFromRows($this->gatherSuppressionRows($projectId));
 
         $canReportOthers = $this->canReportOnOthers($projectId, $userId);
@@ -559,7 +559,7 @@ class TimeReportModel extends Base
         ];
 
         if ($includeDetail) {
-            $report['detail'] = $this->buildDetail($contributions, $taskRows, $subjectIds);
+            $report['detail'] = $this->buildDetail($contributions, $taskRows, $subjectIds, $this->sendDescriptionsEnabled());
         }
 
         // Scoped by PERMISSION, not by the subject set, so the warning is invariant
@@ -725,15 +725,23 @@ class TimeReportModel extends Base
      * feeds both the task-level fallback and the completed-task detail, and a selected
      * user can have worked on a task somebody else owns.
      */
-    private function gatherRangeTaskRows(int $projectId, int $startTs, int $endTs): array
+    private function gatherRangeTaskRows(int $projectId, int $startTs, int $endTs, bool $includeDescriptions = false): array
     {
         $t = \Kanboard\Model\TaskModel::TABLE;
 
+        // date_modification anchors the task content hash; description is fetched ONLY
+        // when the admin opt-in is on, so it never enters the process otherwise.
+        $columns = [
+            $t . '.id', $t . '.project_id', $t . '.owner_id', $t . '.time_spent',
+            $t . '.date_completed', $t . '.date_modification', $t . '.reference',
+            $t . '.title', $t . '.category_id',
+        ];
+        if ($includeDescriptions) {
+            $columns[] = $t . '.description';
+        }
+
         $rows = $this->db->table($t)
-            ->columns(
-                $t . '.id', $t . '.project_id', $t . '.owner_id', $t . '.time_spent',
-                $t . '.date_completed', $t . '.reference', $t . '.title', $t . '.category_id'
-            )
+            ->columns(...$columns)
             ->eq($t . '.project_id', $projectId)
             ->gte($t . '.date_completed', $startTs)
             ->lte($t . '.date_completed', $endTs)
@@ -749,19 +757,73 @@ class TimeReportModel extends Base
         $out = [];
         foreach ($rows as $r) {
             $out[] = [
-                'id'             => (int) $r['id'],
-                'project_id'     => (int) $r['project_id'],
-                'owner_id'       => (int) $r['owner_id'],
-                'time_spent'     => (float) $r['time_spent'],
-                'date_completed' => (int) $r['date_completed'],
-                'reference'      => (string) $r['reference'],
-                'title'          => (string) $r['title'],
-                'category_id'    => (int) $r['category_id'],
-                'category'       => $categories[(int) $r['category_id']] ?? '',
+                'id'                => (int) $r['id'],
+                'project_id'        => (int) $r['project_id'],
+                'owner_id'          => (int) $r['owner_id'],
+                'time_spent'        => (float) $r['time_spent'],
+                'date_completed'    => (int) $r['date_completed'],
+                'date_modification' => (int) ($r['date_modification'] ?? 0),
+                'reference'         => (string) $r['reference'],
+                'title'             => (string) $r['title'],
+                'category_id'       => (int) $r['category_id'],
+                'category'          => $categories[(int) $r['category_id']] ?? '',
+                'description'       => $includeDescriptions ? (string) ($r['description'] ?? '') : '',
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * Completed subtasks for the given tasks, grouped by task id.
+     *
+     * Core subtasks carry no description column, so only title/status/hours/position/
+     * time are gathered — descriptions here are always empty. `hours` mirrors the
+     * recorded time_spent so the AI narrative can ground itself in what was actually
+     * done. Ordered by position within each task for stable hashing and display.
+     *
+     * @param  list<int> $taskIds
+     * @return array<int, list<array{title:string,status:int,hours:float,time_spent:float,time_estimated:float,position:int}>>
+     */
+    public function gatherSubtasksForTasks(array $taskIds): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $taskIds)));
+        if ($ids === []) {
+            return [];
+        }
+
+        $s = \Kanboard\Model\SubtaskModel::TABLE;
+
+        $rows = $this->db->table($s)
+            ->columns(
+                $s . '.id', $s . '.task_id', $s . '.title', $s . '.status',
+                $s . '.time_spent', $s . '.time_estimated', $s . '.position'
+            )
+            ->in($s . '.task_id', $ids)
+            ->asc($s . '.position')
+            ->asc($s . '.id')
+            ->findAll();
+
+        $grouped = [];
+        foreach ($rows as $r) {
+            $taskId = (int) $r['task_id'];
+            $grouped[$taskId][] = [
+                'title'          => (string) $r['title'],
+                'status'         => (int) $r['status'],
+                'hours'          => (float) $r['time_spent'],
+                'time_spent'     => (float) $r['time_spent'],
+                'time_estimated' => (float) $r['time_estimated'],
+                'position'       => (int) $r['position'],
+            ];
+        }
+
+        return $grouped;
+    }
+
+    /** True when the admin opted in to send task descriptions to the AI provider (off by default). */
+    public function sendDescriptionsEnabled(): bool
+    {
+        return (string) $this->configModel->get('timereport_send_descriptions', '0') === '1';
     }
 
     /**
@@ -803,7 +865,7 @@ class TimeReportModel extends Base
      * it. The second half matters: without it, a user's work on somebody else's task
      * would be counted in the total but missing from the artifact justifying the invoice.
      */
-    private function buildDetail(array $contributions, array $taskRows, array $subjectIds): array
+    private function buildDetail(array $contributions, array $taskRows, array $subjectIds, bool $includeDescriptions = false): array
     {
         $selected = array_flip(array_map('intval', $subjectIds));
 
@@ -823,20 +885,25 @@ class TimeReportModel extends Base
 
         $ids = array_keys($completed);
         $tagsByTask = empty($ids) ? [] : $this->taskTagModel->getTagsByTaskIds($ids);
+        $subtasksByTask = empty($ids) ? [] : $this->gatherSubtasksForTasks($ids);
         $assigneeNames = $this->userNames(array_map(static fn ($t) => (int) $t['owner_id'], $completed));
 
         $detail = [];
         foreach ($completed as $id => $t) {
             $tagNames = array_map(static fn ($tag) => (string) $tag['name'], $tagsByTask[$id] ?? []);
             $detail[] = [
-                'task_id'        => $id,
-                'reference'      => (string) $t['reference'],
-                'title'          => (string) $t['title'],
-                'assignee'       => (string) ($assigneeNames[(int) $t['owner_id']] ?? ''),
-                'hours'          => (float) ($hoursByTask[$id] ?? 0.0),
-                'date_completed' => date('Y-m-d', (int) $t['date_completed']),
-                'category'       => (string) $t['category'],
-                'tags'           => $tagNames,
+                'task_id'           => $id,
+                'reference'         => (string) $t['reference'],
+                'title'             => (string) $t['title'],
+                'assignee'          => (string) ($assigneeNames[(int) $t['owner_id']] ?? ''),
+                'hours'             => (float) ($hoursByTask[$id] ?? 0.0),
+                'date_completed'    => date('Y-m-d', (int) $t['date_completed']),
+                'date_modification' => (int) ($t['date_modification'] ?? 0),
+                'category'          => (string) $t['category'],
+                'tags'              => $tagNames,
+                // Descriptions only ever populated when the admin opt-in is on (§6.1).
+                'description'       => $includeDescriptions ? (string) ($t['description'] ?? '') : '',
+                'subtasks'          => $subtasksByTask[$id] ?? [],
             ];
         }
         usort($detail, static fn ($a, $b) => [$a['date_completed'], $a['reference']] <=> [$b['date_completed'], $b['reference']]);
