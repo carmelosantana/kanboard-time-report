@@ -139,6 +139,58 @@ class TimeReportModel extends Base
         return [$contributions, $suppressed];
     }
 
+    /**
+     * Stable content digest of a task Row — what must change its cached AI summary.
+     *
+     * Subtask edits bump no task timestamp and subtasks carry none of their own, so
+     * the hash digests subtask content directly (title|status|time_spent|position)
+     * alongside the task's date_modification. The task description participates ONLY
+     * when $includeDescriptions is on, so flipping the admin opt-in invalidates the
+     * hash and forces a correct regeneration.
+     *
+     * @param array{date_modification?:int|string, description?:string, subtasks?:list<array{title?:string,status?:int,time_spent?:float,position?:int}>} $row
+     */
+    public static function taskContentHash(array $row, bool $includeDescriptions): string
+    {
+        $subtasks = [];
+        foreach ($row['subtasks'] ?? [] as $s) {
+            $subtasks[] = [
+                (string) ($s['title'] ?? ''),
+                (int) ($s['status'] ?? 0),
+                round((float) ($s['time_spent'] ?? 0.0), 2),
+                (int) ($s['position'] ?? 0),
+            ];
+        }
+
+        $parts = [
+            'm' => (int) ($row['date_modification'] ?? 0),
+            's' => $subtasks,
+        ];
+        if ($includeDescriptions) {
+            $parts['d'] = (string) ($row['description'] ?? '');
+        }
+
+        return sha1(json_encode($parts, JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Content digest of an aggregate (day/week) Row: a function of its member tasks
+     * and each member's own content hash. Order-independent; changes when the row's
+     * task set changes or any member's content changes.
+     *
+     * @param array<int,string> $memberTaskHashes taskId => taskContentHash
+     */
+    public static function aggregateContentHash(array $memberTaskHashes): string
+    {
+        $pairs = [];
+        foreach ($memberTaskHashes as $taskId => $hash) {
+            $pairs[] = (int) $taskId . ':' . (string) $hash;
+        }
+        sort($pairs, SORT_STRING);
+
+        return sha1(implode('|', $pairs));
+    }
+
     public static function dayKey(int $ts): string
     {
         return date('Y-m-d', $ts);
