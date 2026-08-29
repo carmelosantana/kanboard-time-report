@@ -187,6 +187,37 @@ class RowSummaryEndpointTest extends Base
         $this->assertFalse($out2['stale']);
     }
 
+    public function testMissingAggregateWithStaleMemberIsFlaggedAndDoesNotSpend(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId, $subId] = $this->seedTaskWithSubtask('Kappa');
+        $dayKey = date('Y-m-05');
+        $c = $this->controller();
+
+        // Generate ONLY the member task summary (task row) — the day aggregate is never
+        // composed, so its cache entry stays missing.
+        $c->run($this->values($projectId, 'task', (string) $taskId));
+        $this->assertSame(1, $this->taskCalls);
+        $this->assertSame(0, $this->aggCalls, 'the aggregate was never generated');
+
+        // Change the member's content → its cached summary is now stale.
+        $this->container['db']->table('subtasks')->eq('id', $subId)->update(['title' => 'Do OTHER work']);
+
+        // Compose the day aggregate: the member is served stale (no spend, D7). A missing
+        // aggregate composed from a stale member must be badged, not returned as fresh —
+        // and must not spend to compose an outdated narrative.
+        $out = $c->run($this->values($projectId, 'day', $dayKey));
+        $this->assertTrue($out['stale'], 'a missing aggregate over a stale member must be flagged stale');
+        $this->assertSame(1, $this->taskCalls, 'stale member is not regenerated (no spend)');
+        $this->assertSame(0, $this->aggCalls, 'a stale-member aggregate must not spend to compose');
+
+        // It must not have been persisted as fresh: forcing a regenerate rebuilds cleanly.
+        $out2 = $c->run($this->values($projectId, 'day', $dayKey, true));
+        $this->assertFalse($out2['stale'], 'force regenerates the member and re-composes the aggregate');
+        $this->assertSame(2, $this->taskCalls, 'force regenerates the member');
+        $this->assertSame(1, $this->aggCalls, 'force composes the aggregate once');
+    }
+
     // ── Task 11: cache-only summaries feed the CSV export ──────────────────────
 
     private function csvController(): object

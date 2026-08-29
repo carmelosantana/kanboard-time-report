@@ -345,17 +345,23 @@ class TimeReportController extends BaseController
         $cached  = $cache->getAggregate($projectId, $granularity, $rowKey);
         $state   = \Kanboard\Plugin\TimeReport\Model\AiSummaryCache::classify($cached, $aggHash);
 
-        if ($force || $state === 'missing') {
+        // A member served stale from cache (no regeneration) would compose an outdated
+        // narrative. Per D7 we neither spend to fix it nor persist it as fresh: even a
+        // MISSING aggregate is left uncomposed and flagged stale so the UI badges it,
+        // and it re-composes cleanly once the members are regenerated (force below,
+        // which regenerates the members first so $anyStale is false).
+        if ($force || ($state === 'missing' && ! $anyStale)) {
             $generated = $this->aiSummaryModel->summarizeAggregate($granularity, $rowLabel, $memberSummaries, $profileId);
             $cache->saveAggregate($projectId, $granularity, $rowKey, $aggHash, $generated['summary'], $generated['highlights']);
             return ['summary' => $generated['summary'], 'highlights' => $generated['highlights'], 'stale' => false];
         }
 
-        // fresh or stale: serve cache without spending.
+        // fresh or stale (or missing-over-a-stale-member): serve whatever is cached
+        // without spending, flagged stale when the entry mismatches OR any member was stale.
         return [
-            'summary'    => (string) $cached['summary'],
-            'highlights' => $cached['highlights'],
-            'stale'      => $state === 'stale',
+            'summary'    => (string) ($cached['summary'] ?? ''),
+            'highlights' => $cached['highlights'] ?? [],
+            'stale'      => $state === 'stale' || $anyStale,
         ];
     }
 
