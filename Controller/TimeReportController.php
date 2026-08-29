@@ -385,8 +385,13 @@ class TimeReportController extends BaseController
         $needDetail = $includeDetail || $wantsAi;
         $report = $this->timeReportModel->report($projectId, $startDate, $endDate, $granularity, $needDetail, $userId, $subjectUserIds, $allUsers);
 
+        // The selected profile is validated once and carried on the report so the per-row
+        // summary context (_breakdown.php) forwards it, honoring the chosen profile on a
+        // miss/force. The per-row CACHE stays profile-independent (D6): last generation wins.
+        $profileId = $this->validProfileId($values['profile_id'] ?? null);
+        $report['profile_id'] = (string) $profileId;
+
         if ($wantsAi) {
-            $profileId = $this->validProfileId($values['profile_id'] ?? null);
             try {
                 $report['ai'] = $this->aiSummaryModel->summarize($report['detail'], $profileId);
             } catch (\Throwable $e) {

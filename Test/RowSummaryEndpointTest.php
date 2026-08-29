@@ -18,6 +18,8 @@ class RowSummaryEndpointTest extends Base
 {
     private int $taskCalls = 0;
     private int $aggCalls = 0;
+    public ?string $lastTaskProfile = 'unset';
+    public ?string $lastAggProfile = 'unset';
 
     protected function setUp(): void
     {
@@ -37,19 +39,19 @@ class RowSummaryEndpointTest extends Base
             return new class($c, $test) extends AiSummaryModel {
                 public function __construct($c, private $test) { parent::__construct($c); }
                 public function summarizeTask(array $row, ?string $profileId = null): array {
-                    $this->test->bumpTask();
+                    $this->test->bumpTask($profileId);
                     return ['summary' => 'TASK:' . ($row['title'] ?? ''), 'highlights' => ['h']];
                 }
                 public function summarizeAggregate(string $g, string $label, array $members, ?string $profileId = null): array {
-                    $this->test->bumpAgg();
+                    $this->test->bumpAgg($profileId);
                     return ['summary' => 'AGG:' . $label . ':' . count($members), 'highlights' => []];
                 }
             };
         };
     }
 
-    public function bumpTask(): void { $this->taskCalls++; }
-    public function bumpAgg(): void { $this->aggCalls++; }
+    public function bumpTask(?string $profileId = null): void { $this->taskCalls++; $this->lastTaskProfile = $profileId; }
+    public function bumpAgg(?string $profileId = null): void { $this->aggCalls++; $this->lastAggProfile = $profileId; }
 
     private function controller(): object
     {
@@ -216,6 +218,47 @@ class RowSummaryEndpointTest extends Base
         $this->assertFalse($out2['stale'], 'force regenerates the member and re-composes the aggregate');
         $this->assertSame(2, $this->taskCalls, 'force regenerates the member');
         $this->assertSame(1, $this->aggCalls, 'force composes the aggregate once');
+    }
+
+    public function testSelectedProfileIsValidatedAndThreadedToGeneration(): void
+    {
+        $this->wireServices();
+        // One real AiConnector profile so validProfileId accepts it.
+        $this->container['configModel']->save(['aiconnector_profiles' => json_encode([
+            ['id' => 'p-luna', 'label' => 'Luna', 'provider' => 'openai', 'model' => 'gpt-5-luna'],
+        ])]);
+        [$projectId, $taskId] = $this->seedTaskWithSubtask('Lambda');
+        $c = $this->controller();
+
+        // A valid selected profile is forwarded to the summarize call.
+        $values = $this->values($projectId, 'task', (string) $taskId);
+        $values['profile_id'] = 'p-luna';
+        $c->run($values);
+        $this->assertSame('p-luna', $this->lastTaskProfile, 'a valid profile id is forwarded to generation');
+
+        // An unknown profile is rejected by validation → default (null).
+        $values2 = $this->values($projectId, 'task', (string) $taskId, true); // force → regenerate
+        $values2['profile_id'] = 'ghost-profile';
+        $c->run($values2);
+        $this->assertNull($this->lastTaskProfile, 'an unknown profile id is validated away to the default');
+    }
+
+    public function testSelectedProfileThreadsThroughToAggregateComposition(): void
+    {
+        $this->wireServices();
+        $this->container['configModel']->save(['aiconnector_profiles' => json_encode([
+            ['id' => 'p-luna', 'label' => 'Luna', 'provider' => 'openai', 'model' => 'gpt-5-luna'],
+        ])]);
+        [$projectId, $taskId] = $this->seedTaskWithSubtask('Mu');
+        $dayKey = date('Y-m-05');
+        $c = $this->controller();
+
+        $values = $this->values($projectId, 'day', $dayKey);
+        $values['profile_id'] = 'p-luna';
+        $c->run($values);
+
+        $this->assertSame('p-luna', $this->lastTaskProfile, 'member generation honors the profile');
+        $this->assertSame('p-luna', $this->lastAggProfile, 'aggregate composition honors the profile');
     }
 
     // ── Task 11: cache-only summaries feed the CSV export ──────────────────────

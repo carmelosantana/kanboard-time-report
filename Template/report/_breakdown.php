@@ -24,6 +24,11 @@ $trCols = 2 + ($isTask ? 0 : 1) + ($trExpandable ? 1 : 0);
         <input type="hidden" name="start_date" value="<?= $this->text->e($report['start_date']) ?>">
         <input type="hidden" name="end_date" value="<?= $this->text->e($report['end_date']) ?>">
         <input type="hidden" name="granularity" value="<?= $this->text->e($report['granularity']) ?>">
+        <?php if (! empty($report['profile_id'])): ?>
+            <!-- The selected AI profile drives generation on a miss/force; the cache key
+                 stays row + content hash only (D6), so this never affects cache identity. -->
+            <input type="hidden" name="profile_id" value="<?= $this->text->e($report['profile_id']) ?>">
+        <?php endif ?>
         <?php foreach ($report['subject_user_ids'] as $trUid): ?>
             <input type="hidden" name="user_ids[]" value="<?= (int) $trUid ?>">
         <?php endforeach ?>

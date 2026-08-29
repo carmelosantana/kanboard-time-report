@@ -163,6 +163,15 @@ class TemplateAssetsTest extends Base
         $this->assertStringContainsString('csrf', $src, 'the POST context must carry CSRF');
     }
 
+    public function testSummaryContextForwardsSelectedProfile(): void
+    {
+        $src = $this->tpl('_breakdown.php');
+        // The per-row AJAX context must carry the selected AI profile so generation on a
+        // miss/force honors it (the cache stays profile-independent per D6).
+        $this->assertStringContainsString("name=\"profile_id\"", $src, 'the per-row context must forward the selected AI profile');
+        $this->assertStringContainsString("profile_id", $src);
+    }
+
     public function testShowPassesAiEnabledToBreakdown(): void
     {
         $src = $this->tpl('show.php');

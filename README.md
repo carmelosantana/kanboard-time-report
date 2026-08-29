@@ -28,6 +28,8 @@ TimeReport integrates with the [AiConnector](https://github.com/carmelosantana/k
 
 For the per-day, per-week, and per-task breakdowns, each row can be expanded to a summary of the work it covers. Summaries load on demand, are cached (they survive across reports), and show a **"may be outdated"** badge with one-click **Regenerate** when the underlying work changed. **Generate all summaries** fills every row at once; **Copy as Markdown** includes whatever summaries are loaded, and the CSV export gains a **Summary** column populated from cache.
 
+The per-row cache is keyed by row identity plus a content hash only — it is **shared across AI profiles** (and users). The selected profile decides which provider generates a summary on a miss or a **Regenerate**; the result is cached under that shared key, so the **last generation wins** regardless of which profile produced it.
+
 ### What is sent to the AI provider
 
 When you add an AI summary, TimeReport sends the configured [AiConnector](https://github.com/carmelosantana/kanboard-ai-connector) provider, for each completed task in scope:
