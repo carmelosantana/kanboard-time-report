@@ -23,3 +23,20 @@
     animation: tr-copy-fade 1.2s ease-out forwards;
 }
 @keyframes tr-copy-fade { 0% { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Per-row AI summaries */
+.tr-expander-col { width: 2em; text-align: center; }
+.tr-expander { background: none; border: 0; cursor: pointer; color: #4b9fd5; padding: 0.2em 0.4em; font-size: 1em; }
+.tr-expander:hover { color: #2c6b93; }
+.tr-expander.tr-has-summary { color: #8a63d2; }
+.tr-summary-row > td { background: rgba(75,159,213,0.05); padding: 0.75em 1em; }
+.tr-summary-panel { position: relative; }
+.tr-summary-text { margin: 0.25em 0; }
+.tr-summary-highlights { margin: 0.25em 0 0.5em 1.2em; }
+.tr-summary-actions { display: flex; gap: 0.5em; margin-top: 0.5em; }
+.tr-summary-error { color: #b94a48; }
+.tr-stale-badge {
+    display: inline-block; margin-bottom: 0.4em;
+    font-size: 0.75em; padding: 0.15em 0.5em;
+    background: #b58900; color: #fff; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.03em;
+}

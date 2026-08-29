@@ -42,7 +42,7 @@
     <?= $this->render('TimeReport:report/_users', ['report' => $report]) ?>
 <?php endif ?>
 
-<?= $this->render('TimeReport:report/_breakdown', ['report' => $report]) ?>
+<?= $this->render('TimeReport:report/_breakdown', ['report' => $report, 'ai_enabled' => ! empty($ai_enabled)]) ?>
 
 <?php if (! empty($report['include_detail']) && ! empty($report['detail'])): ?>
     <?= $this->render('TimeReport:report/_detail', ['report' => $report]) ?>

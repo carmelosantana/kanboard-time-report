@@ -141,4 +141,38 @@ class TemplateAssetsTest extends Base
         $this->assertStringContainsString('multi_user', $src);
         $this->assertStringContainsString('Assignee', $src);
     }
+
+    // ── Task 8: expandable per-row summaries ───────────────────────────────────
+
+    public function testBreakdownRendersExpanderAndSummaryContextWhenAiEnabled(): void
+    {
+        $src = $this->tpl('_breakdown.php');
+        // Gated on ai_enabled + the task/day/week granularities only.
+        $this->assertStringContainsString('ai_enabled', $src);
+        $this->assertMatchesRegularExpression("/'task',\s*'day',\s*'week'/", $src, 'per-row summaries limited to task/day/week');
+        $this->assertStringContainsString('data-tr-row-toggle', $src, 'each summarizable row has an expander');
+        $this->assertStringContainsString('data-row-key', $src);
+        $this->assertStringContainsString('tr-summary-row', $src, 'a lazily-populated detail row follows each row');
+        $this->assertStringContainsString('id="tr-summary-context"', $src, 'the AJAX context form must exist');
+        $this->assertStringContainsString('rowSummary', $src, 'context must point at the row-summary endpoint');
+        $this->assertStringContainsString('csrf', $src, 'the POST context must carry CSRF');
+    }
+
+    public function testShowPassesAiEnabledToBreakdown(): void
+    {
+        $src = $this->tpl('show.php');
+        $this->assertMatchesRegularExpression("/_breakdown.*ai_enabled/s", $src);
+    }
+
+    public function testSummaryJsIsDelegatedAndFetchesEndpoint(): void
+    {
+        $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');
+        $this->assertStringContainsString('data-tr-row-toggle', $js, 'JS must delegate the expander toggle');
+        $this->assertStringContainsString('data-tr-regenerate', $js, 'JS must handle regenerate');
+        $this->assertStringContainsString('fetch(', $js, 'JS must POST to the endpoint');
+        $this->assertStringContainsString('tr-stale-badge', $js, 'JS must render the may-be-outdated badge when stale');
+        $this->assertStringContainsString('TimeReportSummaries', $js, 'bulk fill hook must be exposed');
+        // XSS-safety: model text set via textContent, never innerHTML of untrusted data.
+        $this->assertStringContainsString('textContent', $js);
+    }
 }
