@@ -78,6 +78,22 @@ class RowSummaryEndpointTest extends Base
         return [$projectId, $taskId, $subId];
     }
 
+    /** Add another closed task with a tracked subtask (same day) to an existing project. */
+    private function addTaskWithSubtask(int $projectId, string $title): int
+    {
+        $taskId = (int) $this->container['taskCreationModel']->create(['title' => $title, 'project_id' => $projectId, 'owner_id' => 1]);
+        $subId = (int) $this->container['subtaskModel']->create(['task_id' => $taskId, 'title' => 'Work', 'user_id' => 1]);
+        $this->container['db']->table('subtasks')->eq('id', $subId)->update(['time_spent' => 1.0]);
+        $this->container['db']->table('subtask_time_tracking')->insert([
+            'subtask_id' => $subId, 'user_id' => 1,
+            'start' => strtotime(date('Y-m-05') . ' 09:00:00'),
+            'end'   => strtotime(date('Y-m-05') . ' 10:00:00'),
+            'time_spent' => 1.0,
+        ]);
+        $this->container['taskStatusModel']->close($taskId);
+        return $taskId;
+    }
+
     private function values(int $projectId, string $granularity, string $rowKey, bool $force = false): array
     {
         return [
@@ -277,6 +293,39 @@ class RowSummaryEndpointTest extends Base
                 );
             }
         };
+    }
+
+    public function testCsvSummariesMineTaskContentOnceAcrossRows(): void
+    {
+        $this->wireServices();
+
+        // Count buildTaskContentRows invocations without changing its behavior.
+        $counter = new \stdClass();
+        $counter->n = 0;
+        $this->container['timeReportModel'] = function ($c) use ($counter) {
+            return new class($c, $counter) extends TimeReportModel {
+                public $counter;
+                public function __construct($c, $counter) { parent::__construct($c); $this->counter = $counter; }
+                public function buildTaskContentRows(int $projectId, array $taskIds, bool $includeDescriptions): array {
+                    $this->counter->n++;
+                    return parent::buildTaskContentRows($projectId, $taskIds, $includeDescriptions);
+                }
+            };
+        };
+
+        [$projectId, $t1] = $this->seedTaskWithSubtask('One');
+        $this->addTaskWithSubtask($projectId, 'Two');
+        $this->addTaskWithSubtask($projectId, 'Three');
+
+        $c = $this->csvController();
+        $report = $c->report($this->values($projectId, 'task', (string) $t1));
+        $this->assertCount(3, $report['breakdown'], 'three task rows in the report');
+
+        // Attaching cache-only summaries must mine task content ONCE for the whole report,
+        // not re-mine per row (the N+1 the report already computed).
+        $counter->n = 0;
+        $c->cachedFor($report);
+        $this->assertSame(1, $counter->n, 'CSV summaries mine task content once, not per row');
     }
 
     public function testCsvSummariesIncludeFreshOmitStaleAndMissing(): void

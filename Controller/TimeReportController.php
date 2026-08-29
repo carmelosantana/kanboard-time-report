@@ -5,6 +5,8 @@ namespace Kanboard\Plugin\TimeReport\Controller;
 use Kanboard\Controller\BaseController;
 use Kanboard\Core\Controller\AccessForbiddenException;
 use Kanboard\Plugin\TimeReport\Model\AiGate;
+use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
+use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
 
 /**
  * TimeReportController — the report form + the three delivery surfaces.
@@ -203,31 +205,37 @@ class TimeReportController extends BaseController
 
         $projectId           = (int) $report['project_id'];
         $includeDescriptions = $this->timeReportModel->sendDescriptionsEnabled();
-        $cache               = $this->aiSummaryCache;
-        $out                 = [];
 
+        // Mine ONCE over the UNION of member task ids across every row — the report already
+        // computed these rows, so a per-row buildTaskContentRows() would be an N+1 (2 DB
+        // queries each) re-mining content we already have. One content-hash map serves all
+        // rows below.
+        $allTaskIds = [];
         foreach ($report['breakdown'] as $row) {
-            $rowKey    = (string) $row['key'];
-            $memberIds = array_map('intval', $row['task_ids'] ?? []);
-            $content   = $this->timeReportModel->buildTaskContentRows($projectId, $memberIds, $includeDescriptions);
+            foreach ($row['task_ids'] ?? [] as $tid) {
+                $allTaskIds[(int) $tid] = true;
+            }
+        }
+        $content    = $this->timeReportModel->buildTaskContentRows($projectId, array_keys($allTaskIds), $includeDescriptions);
+        $hashByTask = [];
+        foreach ($content as $tid => $contentRow) {
+            $hashByTask[(int) $tid] = TimeReportModel::taskContentHash($contentRow, $includeDescriptions);
+        }
 
+        $out = [];
+        foreach ($report['breakdown'] as $row) {
+            $rowKey       = (string) $row['key'];
             $memberHashes = [];
-            foreach ($memberIds as $tid) {
-                if (isset($content[$tid])) {
-                    $memberHashes[$tid] = \Kanboard\Plugin\TimeReport\Model\TimeReportModel::taskContentHash($content[$tid], $includeDescriptions);
+            foreach ($row['task_ids'] ?? [] as $tid) {
+                $tid = (int) $tid;
+                if (isset($hashByTask[$tid])) {
+                    $memberHashes[$tid] = $hashByTask[$tid];
                 }
             }
 
-            if ($granularity === 'task') {
-                $tid    = (int) $rowKey;
-                $cached = $cache->getTask($tid);
-                $hash   = $memberHashes[$tid] ?? '';
-            } else {
-                $hash   = \Kanboard\Plugin\TimeReport\Model\TimeReportModel::aggregateContentHash($memberHashes);
-                $cached = $cache->getAggregate($projectId, $granularity, $rowKey);
-            }
+            [$hash, $cached] = $this->rowHashAndCache($projectId, $granularity, $rowKey, $memberHashes);
 
-            if (\Kanboard\Plugin\TimeReport\Model\AiSummaryCache::classify($cached, $hash) === 'fresh') {
+            if (AiSummaryCache::classify($cached, $hash) === 'fresh') {
                 $out[$rowKey] = (string) $cached['summary'];
             }
         }
@@ -309,16 +317,39 @@ class TimeReportController extends BaseController
     }
 
     /**
+     * The row's current content hash and cached entry, selected by granularity from a map
+     * of its members' content hashes. The single home of the task-vs-aggregate selection,
+     * shared by the CSV export (cachedRowSummaries) and the endpoint's aggregate path so
+     * both classify a row identically. task → the member task's own hash + task cache;
+     * day/week → the aggregate-of-members hash + aggregate cache.
+     *
+     * @param  array<int,string> $memberHashes taskId => taskContentHash
+     * @return array{0:string,1:?array} [currentHash, cachedEntry]
+     */
+    private function rowHashAndCache(int $projectId, string $granularity, string $rowKey, array $memberHashes): array
+    {
+        if ($granularity === 'task') {
+            $taskId = (int) $rowKey;
+            return [$memberHashes[$taskId] ?? '', $this->aiSummaryCache->getTask($taskId)];
+        }
+
+        return [
+            TimeReportModel::aggregateContentHash($memberHashes),
+            $this->aiSummaryCache->getAggregate($projectId, $granularity, $rowKey),
+        ];
+    }
+
+    /**
      * One member task's summary via the cache state machine.
      *
      * @return array{0: array{summary:string,highlights:array}, 1: string, 2: bool} [summary, currentHash, stale]
      */
     protected function resolveTaskSummary(array $contentRow, bool $includeDescriptions, bool $force, ?string $profileId): array
     {
-        $hash   = \Kanboard\Plugin\TimeReport\Model\TimeReportModel::taskContentHash($contentRow, $includeDescriptions);
+        $hash   = TimeReportModel::taskContentHash($contentRow, $includeDescriptions);
         $cache  = $this->aiSummaryCache;
         $cached = $cache->getTask((int) $contentRow['task_id']);
-        $state  = \Kanboard\Plugin\TimeReport\Model\AiSummaryCache::classify($cached, $hash);
+        $state  = AiSummaryCache::classify($cached, $hash);
 
         if ($force || $state === 'missing') {
             $generated = $this->aiSummaryModel->summarizeTask($contentRow, $profileId);
@@ -340,10 +371,9 @@ class TimeReportController extends BaseController
      */
     protected function resolveAggregateSummary(int $projectId, string $granularity, string $rowKey, string $rowLabel, array $memberSummaries, array $memberHashes, bool $anyStale, bool $force, ?string $profileId): array
     {
-        $aggHash = \Kanboard\Plugin\TimeReport\Model\TimeReportModel::aggregateContentHash($memberHashes);
-        $cache   = $this->aiSummaryCache;
-        $cached  = $cache->getAggregate($projectId, $granularity, $rowKey);
-        $state   = \Kanboard\Plugin\TimeReport\Model\AiSummaryCache::classify($cached, $aggHash);
+        [$aggHash, $cached] = $this->rowHashAndCache($projectId, $granularity, $rowKey, $memberHashes);
+        $cache = $this->aiSummaryCache;
+        $state = AiSummaryCache::classify($cached, $aggHash);
 
         // A member served stale from cache (no regeneration) would compose an outdated
         // narrative. Per D7 we neither spend to fix it nor persist it as fresh: even a
