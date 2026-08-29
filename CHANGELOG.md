@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.1 — 2026-08-28
+
+### Fixed
+
+- **Per-row summaries now honor the selected AI profile.** The per-row summary request never forwarded the chosen profile, so generation always used the default provider. The selected profile is now forwarded and used on a miss or **Regenerate**. The per-row cache stays keyed by row identity and content hash only — it is shared across profiles, so the last generation wins.
+- **Day/week summaries composed over out-of-date work are now badged.** When a member task's cached summary was outdated and the aggregate had not been generated yet, the composed narrative could be returned without the **"may be outdated"** badge. Such aggregates are now flagged as outdated (and not cached as current) without any extra AI spend, and re-compose cleanly once the member summaries are regenerated.
+
+### Changed
+
+- **Faster CSV export.** The per-row **Summary** column now gathers each task's content a single time for the whole report instead of once per row, removing redundant queries on wide per-task exports. The CSV output is unchanged.
+
 ## 1.4.0 — 2026-08-28
 
 ### Added
