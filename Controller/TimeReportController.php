@@ -145,6 +145,150 @@ class TimeReportController extends BaseController
         $this->response->send();
     }
 
+    /**
+     * Per-row AI summary (POST, CSRF, JSON). Lazy, cache-backed, content-hashed.
+     *
+     * Rebuilds the report context (reusing report() — no new mining path), locates the
+     * requested row, and runs the fresh/stale/missing/force state machine (§6.5).
+     * Guarded by login (router), CSRF, the AI gate, and assertProjectAccess (inside
+     * report()). Stale rows are served from cache WITHOUT spending — regeneration only
+     * happens on an explicit force.
+     */
+    public function rowSummary(): void
+    {
+        $this->checkCSRFForm();
+
+        if (! $this->isAiEnabled()) {
+            throw new AccessForbiddenException(t('AI summaries are not available.'));
+        }
+
+        $this->response->json($this->computeRowSummary($this->request->getValues()));
+    }
+
+    /** The rowSummary state machine, isolated from the HTTP shell for testing. */
+    protected function computeRowSummary(array $values): array
+    {
+        $userId      = $this->userSession->getId();
+        $projectId   = (int) ($values['project_id'] ?? 0);
+        $granularity = in_array($values['granularity'] ?? '', ['task', 'day', 'week'], true) ? $values['granularity'] : '';
+        $rowKey      = (string) ($values['row_key'] ?? '');
+        $force       = ! empty($values['force']);
+
+        if ($granularity === '' || $rowKey === '') {
+            return ['error' => t('Invalid summary request.')];
+        }
+
+        $startDate = $this->validDate($values['start_date'] ?? '', date('Y-m-01'));
+        $endDate   = $this->validDate($values['end_date'] ?? '', date('Y-m-d'));
+        [$subjectUserIds, $allUsers] = $this->subjectSelection($values);
+
+        // Access is enforced inside report(); detail on so subtasks/descriptions are present.
+        $report = $this->timeReportModel->report($projectId, $startDate, $endDate, $granularity, true, $userId, $subjectUserIds, $allUsers);
+
+        $row = null;
+        foreach ($report['breakdown'] as $b) {
+            if ((string) $b['key'] === $rowKey) {
+                $row = $b;
+                break;
+            }
+        }
+        if ($row === null) {
+            return ['error' => t('This row is not part of the current report.')];
+        }
+
+        $profileId          = $this->validProfileId($values['profile_id'] ?? null);
+        $includeDescriptions = $this->timeReportModel->sendDescriptionsEnabled();
+        $memberTaskIds       = array_map('intval', $row['task_ids'] ?? []);
+        $contentRows         = $this->timeReportModel->buildTaskContentRows($projectId, $memberTaskIds, $includeDescriptions);
+
+        // Resolve every member task's summary (cache-first), collecting current hashes.
+        $memberSummaries = [];
+        $memberHashes    = [];
+        $anyStale        = false;
+        foreach ($memberTaskIds as $taskId) {
+            $contentRow = $contentRows[$taskId] ?? null;
+            if ($contentRow === null) {
+                continue;
+            }
+            [$summary, $hash, $stale] = $this->resolveTaskSummary($contentRow, $includeDescriptions, $force, $profileId);
+            $memberHashes[$taskId]    = $hash;
+            $memberSummaries[]        = ['title' => $contentRow['title'], 'summary' => $summary['summary'], 'highlights' => $summary['highlights']];
+            $anyStale = $anyStale || $stale;
+        }
+
+        if ($granularity === 'task') {
+            $only = $memberSummaries[0] ?? ['summary' => '', 'highlights' => []];
+            return [
+                'summary'    => $only['summary'],
+                'highlights' => $only['highlights'],
+                'stale'      => $anyStale && ! $force,
+            ];
+        }
+
+        return $this->resolveAggregateSummary(
+            $projectId,
+            $granularity,
+            $rowKey,
+            (string) $row['label'],
+            $memberSummaries,
+            $memberHashes,
+            $anyStale,
+            $force,
+            $profileId
+        );
+    }
+
+    /**
+     * One member task's summary via the cache state machine.
+     *
+     * @return array{0: array{summary:string,highlights:array}, 1: string, 2: bool} [summary, currentHash, stale]
+     */
+    protected function resolveTaskSummary(array $contentRow, bool $includeDescriptions, bool $force, ?string $profileId): array
+    {
+        $hash   = \Kanboard\Plugin\TimeReport\Model\TimeReportModel::taskContentHash($contentRow, $includeDescriptions);
+        $cache  = $this->aiSummaryCache;
+        $cached = $cache->getTask((int) $contentRow['task_id']);
+        $state  = \Kanboard\Plugin\TimeReport\Model\AiSummaryCache::classify($cached, $hash);
+
+        if ($force || $state === 'missing') {
+            $generated = $this->aiSummaryModel->summarizeTask($contentRow, $profileId);
+            $cache->saveTask((int) $contentRow['task_id'], $hash, $generated['summary'], $generated['highlights']);
+            return [$generated, $hash, false];
+        }
+
+        // fresh or stale: serve cache with no spend; stale is flagged, not regenerated.
+        return [
+            ['summary' => (string) $cached['summary'], 'highlights' => $cached['highlights']],
+            $hash,
+            $state === 'stale',
+        ];
+    }
+
+    /**
+     * The aggregate (day/week) row via its own cache state machine, composed from the
+     * already-resolved member summaries. Any member staleness ⇒ aggregate hash mismatch.
+     */
+    protected function resolveAggregateSummary(int $projectId, string $granularity, string $rowKey, string $rowLabel, array $memberSummaries, array $memberHashes, bool $anyStale, bool $force, ?string $profileId): array
+    {
+        $aggHash = \Kanboard\Plugin\TimeReport\Model\TimeReportModel::aggregateContentHash($memberHashes);
+        $cache   = $this->aiSummaryCache;
+        $cached  = $cache->getAggregate($projectId, $granularity, $rowKey);
+        $state   = \Kanboard\Plugin\TimeReport\Model\AiSummaryCache::classify($cached, $aggHash);
+
+        if ($force || $state === 'missing') {
+            $generated = $this->aiSummaryModel->summarizeAggregate($granularity, $rowLabel, $memberSummaries, $profileId);
+            $cache->saveAggregate($projectId, $granularity, $rowKey, $aggHash, $generated['summary'], $generated['highlights']);
+            return ['summary' => $generated['summary'], 'highlights' => $generated['highlights'], 'stale' => false];
+        }
+
+        // fresh or stale: serve cache without spending.
+        return [
+            'summary'    => (string) $cached['summary'],
+            'highlights' => $cached['highlights'],
+            'stale'      => $state === 'stale',
+        ];
+    }
+
     /** Shared: read/validate params, compute the report, attach AI only when the gate is open. */
     protected function buildReportFromRequest(): array
     {

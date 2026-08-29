@@ -272,11 +272,16 @@ class TimeReportModel extends Base
 
         $breakdown = [];
         foreach ($buckets as $key => $b) {
+            $taskIds = array_map('intval', array_keys($b['tasks']));
+            sort($taskIds);
             $breakdown[] = [
                 'key'        => (string) $key,
                 'label'      => $b['label'],
                 'hours'      => (float) $b['hours'],
                 'task_count' => count($b['tasks']),
+                // The member task ids of this row — lets the per-row AI summary locate
+                // a row's tasks without a second mining path.
+                'task_ids'   => $taskIds,
             ];
         }
 
@@ -876,6 +881,54 @@ class TimeReportModel extends Base
     public function sendDescriptionsEnabled(): bool
     {
         return (string) $this->configModel->get('timereport_send_descriptions', '0') === '1';
+    }
+
+    /**
+     * Per-task CONTENT rows for the given task ids, keyed by task id — the grounding
+     * for a per-task AI summary and its content hash. Carries only intrinsic, stable
+     * content (title, reference, date_modification, completed subtasks, and the
+     * description when the opt-in is on), never report-attributed hours, so a cached
+     * task summary is shared across reports (D6). Project-scoped as a guard against a
+     * task id from another project.
+     *
+     * @param  list<int> $taskIds
+     * @return array<int, array{task_id:int,title:string,reference:string,date_modification:int,description:string,subtasks:list<array>}>
+     */
+    public function buildTaskContentRows(int $projectId, array $taskIds, bool $includeDescriptions): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $taskIds)));
+        if ($ids === []) {
+            return [];
+        }
+
+        $t = \Kanboard\Model\TaskModel::TABLE;
+        $columns = [$t . '.id', $t . '.reference', $t . '.title', $t . '.date_modification'];
+        if ($includeDescriptions) {
+            $columns[] = $t . '.description';
+        }
+
+        $rows = $this->db->table($t)
+            ->columns(...$columns)
+            ->eq($t . '.project_id', $projectId)
+            ->in($t . '.id', $ids)
+            ->findAll();
+
+        $subtasksByTask = $this->gatherSubtasksForTasks($ids);
+
+        $out = [];
+        foreach ($rows as $r) {
+            $id = (int) $r['id'];
+            $out[$id] = [
+                'task_id'           => $id,
+                'title'             => (string) $r['title'],
+                'reference'         => (string) $r['reference'],
+                'date_modification' => (int) ($r['date_modification'] ?? 0),
+                'description'       => $includeDescriptions ? (string) ($r['description'] ?? '') : '',
+                'subtasks'          => $subtasksByTask[$id] ?? [],
+            ];
+        }
+
+        return $out;
     }
 
     /**

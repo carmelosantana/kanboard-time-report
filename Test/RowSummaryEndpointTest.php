@@ -1,0 +1,207 @@
+<?php
+
+require_once 'tests/units/Base.php';
+
+use KanboardTests\units\Base;
+use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
+use Kanboard\Plugin\TimeReport\Model\AiSummaryModel;
+use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
+use Kanboard\Plugin\TimeReport\Controller\TimeReportController;
+
+/**
+ * Task 7 — the rowSummary endpoint state machine (fresh/stale/missing/force).
+ *
+ * Real TimeReportModel + real AiSummaryCache; only the AI model is stubbed (counting
+ * calls, no network) so we can assert exactly when the model spends.
+ */
+class RowSummaryEndpointTest extends Base
+{
+    private int $taskCalls = 0;
+    private int $aggCalls = 0;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // The endpoint reads the current user from the session; log in as user 1 (admin),
+        // the owner of every project seeded below, so assertProjectAccess passes.
+        $_SESSION['user'] = ['id' => 1, 'role' => 'app-admin'];
+    }
+
+    private function wireServices(): void
+    {
+        $this->container['timeReportModel'] = fn ($c) => new TimeReportModel($c);
+        $this->container['aiSummaryCache']  = fn ($c) => new AiSummaryCache($c);
+
+        $test = $this;
+        $this->container['aiSummaryModel'] = function ($c) use ($test) {
+            return new class($c, $test) extends AiSummaryModel {
+                public function __construct($c, private $test) { parent::__construct($c); }
+                public function summarizeTask(array $row, ?string $profileId = null): array {
+                    $this->test->bumpTask();
+                    return ['summary' => 'TASK:' . ($row['title'] ?? ''), 'highlights' => ['h']];
+                }
+                public function summarizeAggregate(string $g, string $label, array $members, ?string $profileId = null): array {
+                    $this->test->bumpAgg();
+                    return ['summary' => 'AGG:' . $label . ':' . count($members), 'highlights' => []];
+                }
+            };
+        };
+    }
+
+    public function bumpTask(): void { $this->taskCalls++; }
+    public function bumpAgg(): void { $this->aggCalls++; }
+
+    private function controller(): object
+    {
+        return new class($this->container) extends TimeReportController {
+            protected function isAiEnabled(): bool { return true; }
+            public function run(array $values): array { return $this->computeRowSummary($values); }
+        };
+    }
+
+    /** A closed task with a tracked subtask this month → one 'task' breakdown row. */
+    private function seedTaskWithSubtask(string $title = 'Parent'): array
+    {
+        $projectId = (int) $this->container['projectModel']->create(['name' => 'RS ' . uniqid()], 1, true);
+        $taskId = (int) $this->container['taskCreationModel']->create(['title' => $title, 'project_id' => $projectId, 'owner_id' => 1]);
+        $subId = (int) $this->container['subtaskModel']->create(['task_id' => $taskId, 'title' => 'Do work', 'user_id' => 1]);
+        $this->container['db']->table('subtasks')->eq('id', $subId)->update(['time_spent' => 2.0]);
+        $this->container['db']->table('subtask_time_tracking')->insert([
+            'subtask_id' => $subId, 'user_id' => 1,
+            'start' => strtotime(date('Y-m-05') . ' 09:00:00'),
+            'end'   => strtotime(date('Y-m-05') . ' 11:00:00'),
+            'time_spent' => 2.0,
+        ]);
+        $this->container['taskStatusModel']->close($taskId);
+        return [$projectId, $taskId, $subId];
+    }
+
+    private function values(int $projectId, string $granularity, string $rowKey, bool $force = false): array
+    {
+        return [
+            'project_id'  => (string) $projectId,
+            'granularity' => $granularity,
+            'row_key'     => $rowKey,
+            'start_date'  => date('Y-m-01'),
+            'end_date'    => date('Y-m-d'),
+            'force'       => $force ? '1' : '',
+        ];
+    }
+
+    public function testTaskMissingGeneratesAndCaches(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId] = $this->seedTaskWithSubtask('Alpha');
+
+        $out = $this->controller()->run($this->values($projectId, 'task', (string) $taskId));
+
+        $this->assertSame('TASK:Alpha', $out['summary']);
+        $this->assertFalse($out['stale']);
+        $this->assertSame(1, $this->taskCalls, 'missing row must generate exactly once');
+
+        // Cache now holds it.
+        $cached = (new AiSummaryCache($this->container))->getTask($taskId);
+        $this->assertSame('TASK:Alpha', $cached['summary']);
+    }
+
+    public function testTaskFreshServesCacheWithoutSpending(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId] = $this->seedTaskWithSubtask('Beta');
+        $c = $this->controller();
+
+        $c->run($this->values($projectId, 'task', (string) $taskId));   // generate
+        $this->assertSame(1, $this->taskCalls);
+
+        $out = $c->run($this->values($projectId, 'task', (string) $taskId)); // fresh
+        $this->assertSame(1, $this->taskCalls, 'fresh row must NOT regenerate');
+        $this->assertFalse($out['stale']);
+        $this->assertSame('TASK:Beta', $out['summary']);
+    }
+
+    public function testTaskStaleServesCacheFlaggedWithoutSpending(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId, $subId] = $this->seedTaskWithSubtask('Gamma');
+        $c = $this->controller();
+
+        $c->run($this->values($projectId, 'task', (string) $taskId));   // generate
+        $this->assertSame(1, $this->taskCalls);
+
+        // Edit the subtask content → content hash changes → cached entry is now stale.
+        $this->container['db']->table('subtasks')->eq('id', $subId)->update(['title' => 'Do MORE work']);
+
+        $out = $c->run($this->values($projectId, 'task', (string) $taskId));
+        $this->assertTrue($out['stale'], 'edited content must read as stale');
+        $this->assertSame(1, $this->taskCalls, 'stale must serve cache without spending');
+        $this->assertSame('TASK:Gamma', $out['summary'], 'stale still returns the last cached summary');
+    }
+
+    public function testForceRegeneratesEvenWhenFresh(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId] = $this->seedTaskWithSubtask('Delta');
+        $c = $this->controller();
+
+        $c->run($this->values($projectId, 'task', (string) $taskId));   // generate
+        $this->assertSame(1, $this->taskCalls);
+
+        $out = $c->run($this->values($projectId, 'task', (string) $taskId, true)); // force
+        $this->assertSame(2, $this->taskCalls, 'force must regenerate');
+        $this->assertFalse($out['stale']);
+    }
+
+    public function testUnknownRowReturnsError(): void
+    {
+        $this->wireServices();
+        [$projectId] = $this->seedTaskWithSubtask('Epsilon');
+        $out = $this->controller()->run($this->values($projectId, 'task', '99999999'));
+        $this->assertArrayHasKey('error', $out);
+    }
+
+    public function testInvalidGranularityReturnsError(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId] = $this->seedTaskWithSubtask('Zeta');
+        $out = $this->controller()->run($this->values($projectId, 'user', (string) $taskId));
+        $this->assertArrayHasKey('error', $out);
+    }
+
+    public function testDayAggregateGeneratesMembersThenComposes(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId] = $this->seedTaskWithSubtask('Eta');
+        $dayKey = date('Y-m-05');
+        $c = $this->controller();
+
+        $out = $c->run($this->values($projectId, 'day', $dayKey));
+        $this->assertSame(1, $this->taskCalls, 'the day row generates its one member task summary');
+        $this->assertSame(1, $this->aggCalls, 'then composes the aggregate');
+        $this->assertStringStartsWith('AGG:', $out['summary']);
+        $this->assertFalse($out['stale']);
+
+        // Second call: everything cached → no new spend.
+        $out2 = $c->run($this->values($projectId, 'day', $dayKey));
+        $this->assertSame(1, $this->taskCalls, 'member summary reused from cache');
+        $this->assertSame(1, $this->aggCalls, 'aggregate reused from cache');
+        $this->assertFalse($out2['stale']);
+    }
+
+    public function testDayAggregateStaleWhenMemberChanges(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId, $subId] = $this->seedTaskWithSubtask('Theta');
+        $dayKey = date('Y-m-05');
+        $c = $this->controller();
+
+        $c->run($this->values($projectId, 'day', $dayKey)); // generate member + agg
+        $this->assertSame(1, $this->aggCalls);
+
+        // Change a member's content → aggregate hash no longer matches.
+        $this->container['db']->table('subtasks')->eq('id', $subId)->update(['time_spent' => 5.0]);
+
+        $out = $c->run($this->values($projectId, 'day', $dayKey));
+        $this->assertTrue($out['stale'], 'a changed member makes the aggregate stale');
+        $this->assertSame(1, $this->aggCalls, 'stale aggregate must not spend');
+    }
+}
