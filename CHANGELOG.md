@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.0 — 2026-08-28
+
+### Added
+
+- **Per-row AI summaries.** Each row of the per-day, per-week, and per-task breakdowns can be expanded to a narrative summary and highlights of the work it covers, so you can understand — and paste — the work behind any single day or task. Summaries load on demand, are cached (they survive across different reports), and carry a **"may be outdated"** badge with one-click **Regenerate** when the underlying work has changed since they were written.
+- **The AI now sees the actual work.** Summaries are grounded in each task's completed **subtasks** (title and hours), a far stronger signal than the task title alone. Day/week summaries are composed from the cached per-task summaries.
+- **Admin opt-in to send task descriptions** (Settings → Integrations, off by default). When on, each completed task's description is included in the data sent to the AI provider for richer summaries; flipping it correctly invalidates cached summaries. Comments are never sent.
+- **Inline control bar** on the results page: a one-line summary of the current view with **Edit filters** to change project, date range, breakdown, scope, detail and AI options and regenerate in place — no round-trip through the form.
+- **Generate all summaries** fills every visible row (cache-respecting, with progress), and **Copy as Markdown** now includes whatever per-row summaries are loaded. The CSV export gains a **Summary** column populated from cache.
+- **Native datepicker** on the report form's date fields.
+
+### Notes
+
+- Per-row summaries apply to the day/week/task breakdowns; the *by user* and *total only* breakdowns keep a single report-level summary.
+- The deduped hours/attribution and scope-denial behavior from 1.3.0 is unchanged.
+
 ## 1.3.0 — 2026-08-27
 
 ### Fixed

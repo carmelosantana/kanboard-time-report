@@ -11,9 +11,25 @@ class PluginMetaTest extends Base
         return json_decode(file_get_contents(dirname(__DIR__) . '/plugin.json'), true);
     }
 
-    public function testVersionIsExactly120(): void
+    public function testVersionIsExactly140(): void
     {
-        $this->assertSame('1.3.0', $this->json()['version']);
+        $this->assertSame('1.4.0', $this->json()['version']);
+    }
+
+    /** tag == version across the three files the CI checks (plugin.json, Plugin.php, CHANGELOG). */
+    public function testVersionAgreesAcrossFiles(): void
+    {
+        $version = $this->json()['version'];
+
+        $plugin = file_get_contents(dirname(__DIR__) . '/Plugin.php');
+        $this->assertMatchesRegularExpression(
+            "/getPluginVersion\(\)[^}]*return '" . preg_quote($version, '/') . "'/s",
+            $plugin,
+            'Plugin.php getPluginVersion() must equal plugin.json version'
+        );
+
+        $changelog = file_get_contents(dirname(__DIR__) . '/CHANGELOG.md');
+        $this->assertStringContainsString('## ' . $version . ' — ', $changelog, 'CHANGELOG must carry the released version entry');
     }
 
     public function testNameAndCompat(): void
