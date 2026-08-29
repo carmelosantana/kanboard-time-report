@@ -116,6 +116,21 @@ class TimeReportHelperTest extends Base
         $this->assertStringContainsString('Label,Hours,Tasks', $csv);
     }
 
+    public function testCsvSummaryColumnPresentOnlyWhenAttached(): void
+    {
+        $report = $this->sampleReport();
+        // No row_summaries → no Summary column (unchanged behavior).
+        $this->assertStringNotContainsString('Label,Hours,Tasks,Summary', $this->helper()->toCsv($report));
+
+        // With cache-only summaries attached, the Summary column appears; uncached rows blank.
+        $report['row_summaries'] = ['2026-03-10' => 'Did the API work'];
+        $csv = $this->helper()->toCsv($report);
+        $this->assertStringContainsString('Label,Hours,Tasks,Summary', $csv);
+        $this->assertStringContainsString('Did the API work', $csv);
+        // The 2026-03-11 row has no cached summary → its Summary cell is blank.
+        $this->assertMatchesRegularExpression('/2026-03-11,3\.00,1,\r?\n/', $csv, 'uncached row exports a blank Summary cell');
+    }
+
     public function testCsvFilenameSlug(): void
     {
         $this->assertSame(

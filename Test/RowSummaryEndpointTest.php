@@ -187,6 +187,46 @@ class RowSummaryEndpointTest extends Base
         $this->assertFalse($out2['stale']);
     }
 
+    // ── Task 11: cache-only summaries feed the CSV export ──────────────────────
+
+    private function csvController(): object
+    {
+        return new class($this->container) extends TimeReportController {
+            protected function isAiEnabled(): bool { return true; }
+            public function run(array $values): array { return $this->computeRowSummary($values); }
+            public function cachedFor(array $report): array { return $this->cachedRowSummaries($report); }
+            public function report(array $values): array {
+                $userId = $this->userSession->getId();
+                return $this->timeReportModel->report(
+                    (int) $values['project_id'], $values['start_date'], $values['end_date'],
+                    $values['granularity'], true, $userId
+                );
+            }
+        };
+    }
+
+    public function testCsvSummariesIncludeFreshOmitStaleAndMissing(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId, $subId] = $this->seedTaskWithSubtask('Iota');
+        $c = $this->csvController();
+
+        // Nothing cached yet → the row is omitted (blank in CSV).
+        $report = $c->report($this->values($projectId, 'task', (string) $taskId));
+        $this->assertSame([], $c->cachedFor($report), 'uncached rows are omitted');
+
+        // Generate → now fresh and included.
+        $c->run($this->values($projectId, 'task', (string) $taskId));
+        $report = $c->report($this->values($projectId, 'task', (string) $taskId));
+        $summaries = $c->cachedFor($report);
+        $this->assertSame('TASK:Iota', $summaries[(string) $taskId] ?? null, 'fresh cached row is included');
+
+        // Edit content → stale → omitted again (no generation on export).
+        $this->container['db']->table('subtasks')->eq('id', $subId)->update(['time_spent' => 9.0]);
+        $report = $c->report($this->values($projectId, 'task', (string) $taskId));
+        $this->assertArrayNotHasKey((string) $taskId, $c->cachedFor($report), 'stale rows export blank');
+    }
+
     public function testDayAggregateStaleWhenMemberChanges(): void
     {
         $this->wireServices();

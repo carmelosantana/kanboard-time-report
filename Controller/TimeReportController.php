@@ -142,6 +142,12 @@ class TimeReportController extends BaseController
             return;
         }
 
+        // Attach cache-only per-row summaries (generates nothing); fresh rows fill the
+        // Summary column, uncached/stale rows export blank.
+        if ($this->isAiEnabled()) {
+            $report['row_summaries'] = $this->cachedRowSummaries($report);
+        }
+
         $helper = $this->helper->timeReport;
         $csv = $helper->toCsv($report);
         $filename = $helper->csvFilename($report['project_name'], $report['start_date'], $report['end_date']);
@@ -177,6 +183,56 @@ class TimeReportController extends BaseController
         }
 
         $this->response->json($this->computeRowSummary($this->request->getValues()));
+    }
+
+    /**
+     * Cache-only per-row summaries for the CSV export (rowKey => summary text).
+     *
+     * Reads the same cache the endpoint writes and returns ONLY fresh rows — a row whose
+     * content hash no longer matches (stale) or that was never generated (missing) is
+     * omitted, so its Summary cell exports blank. Generates nothing and never spends.
+     *
+     * @return array<string,string>
+     */
+    protected function cachedRowSummaries(array $report): array
+    {
+        $granularity = (string) ($report['granularity'] ?? '');
+        if (! in_array($granularity, ['task', 'day', 'week'], true)) {
+            return [];
+        }
+
+        $projectId           = (int) $report['project_id'];
+        $includeDescriptions = $this->timeReportModel->sendDescriptionsEnabled();
+        $cache               = $this->aiSummaryCache;
+        $out                 = [];
+
+        foreach ($report['breakdown'] as $row) {
+            $rowKey    = (string) $row['key'];
+            $memberIds = array_map('intval', $row['task_ids'] ?? []);
+            $content   = $this->timeReportModel->buildTaskContentRows($projectId, $memberIds, $includeDescriptions);
+
+            $memberHashes = [];
+            foreach ($memberIds as $tid) {
+                if (isset($content[$tid])) {
+                    $memberHashes[$tid] = \Kanboard\Plugin\TimeReport\Model\TimeReportModel::taskContentHash($content[$tid], $includeDescriptions);
+                }
+            }
+
+            if ($granularity === 'task') {
+                $tid    = (int) $rowKey;
+                $cached = $cache->getTask($tid);
+                $hash   = $memberHashes[$tid] ?? '';
+            } else {
+                $hash   = \Kanboard\Plugin\TimeReport\Model\TimeReportModel::aggregateContentHash($memberHashes);
+                $cached = $cache->getAggregate($projectId, $granularity, $rowKey);
+            }
+
+            if (\Kanboard\Plugin\TimeReport\Model\AiSummaryCache::classify($cached, $hash) === 'fresh') {
+                $out[$rowKey] = (string) $cached['summary'];
+            }
+        }
+
+        return $out;
     }
 
     /** The rowSummary state machine, isolated from the HTTP shell for testing. */

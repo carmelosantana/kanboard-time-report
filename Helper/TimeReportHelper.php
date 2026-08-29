@@ -100,10 +100,24 @@ class TimeReportHelper extends Base
         $out[] = '';
 
         // Uniform breakdown header across all granularities (the Tasks count is 1
-        // per row for task granularity — simple and documented).
-        $out[] = $this->csvRow(['Label', 'Hours', 'Tasks']);
+        // per row for task granularity — simple and documented). The Summary column is
+        // added only when the controller attached cache-only per-row summaries; uncached
+        // or stale rows export blank (run "Generate all summaries" first for a full set).
+        $withSummary = isset($report['row_summaries']) && is_array($report['row_summaries']);
+        $summaries = $withSummary ? $report['row_summaries'] : [];
+
+        $header = ['Label', 'Hours', 'Tasks'];
+        if ($withSummary) {
+            $header[] = 'Summary';
+        }
+        $out[] = $this->csvRow($header);
+
         foreach ($report['breakdown'] as $row) {
-            $out[] = $this->csvRow([$row['label'], $this->formatHours((float) $row['hours']), (string) (int) $row['task_count']]);
+            $fields = [$row['label'], $this->formatHours((float) $row['hours']), (string) (int) $row['task_count']];
+            if ($withSummary) {
+                $fields[] = (string) ($summaries[(string) $row['key']] ?? '');
+            }
+            $out[] = $this->csvRow($fields);
         }
 
         if (! empty($report['include_detail']) && ! empty($report['detail'])) {
