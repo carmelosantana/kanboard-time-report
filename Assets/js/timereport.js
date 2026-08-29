@@ -50,9 +50,17 @@
     }
 
     function copyMarkdown(btn) {
-        var ta = document.getElementById("tr-markdown");
-        if (!ta) { return; }
-        copyText(ta.value, function () {
+        var text = null;
+        // Prefer the client-side assembler so loaded per-row summaries are included;
+        // fall back to the server-rendered payload when the summaries module is absent.
+        if (window.TimeReportSummaries && window.TimeReportSummaries.assembleMarkdown) {
+            text = window.TimeReportSummaries.assembleMarkdown();
+        } else {
+            var ta = document.getElementById("tr-markdown");
+            if (ta) { text = ta.value; }
+        }
+        if (text === null) { return; }
+        copyText(text, function () {
             var original = btn.textContent;
             btn.textContent = btn.getAttribute("data-tr-copied") || "Copied";
             setTimeout(function () { btn.textContent = original; }, 1500);
@@ -241,6 +249,9 @@
             return;
         }
 
+        var genAllBtn = e.target.closest("[data-tr-generate-all]");
+        if (genAllBtn) { e.preventDefault(); generateAll(genAllBtn); return; }
+
         var toggleBtn = e.target.closest("[data-tr-row-toggle]");
         if (toggleBtn) { e.preventDefault(); toggle(toggleBtn); return; }
 
@@ -281,6 +292,76 @@
         setTimeout(function () { btn.textContent = original; }, 1200);
     }
 
-    // Exposed for the "Generate all" bulk fill (Task 10).
-    window.TimeReportSummaries = { load: loadSummary, summaryRow: summaryRow };
+    // "Generate all summaries": fill every summarizable row, cache-respecting, with a
+    // small concurrency cap and a live progress count. Rows already loaded are skipped.
+    function generateAll(btn) {
+        var toggles = document.querySelectorAll("[data-tr-row-toggle]");
+        var keys = [];
+        for (var i = 0; i < toggles.length; i++) { keys.push(toggles[i].getAttribute("data-row-key")); }
+        if (keys.length === 0) { return; }
+
+        var total = keys.length, done = 0, idx = 0, cap = 2;
+        var progress = btn.getAttribute("data-progress") || "Generating…";
+        var doneLabel = btn.getAttribute("data-done") || btn.textContent;
+        btn.disabled = true;
+
+        function update() { btn.textContent = progress + " (" + done + "/" + total + ")"; }
+        update();
+
+        function next() {
+            if (idx >= keys.length) { return Promise.resolve(); }
+            var key = keys[idx++];
+            var row = summaryRow(key);
+            var panel = row ? row.querySelector(".tr-summary-panel") : null;
+            if (!panel || panel.getAttribute("data-loaded") === "1") {
+                done++; update(); return next();
+            }
+            return loadSummary(panel, key, false).then(function () { done++; update(); return next(); });
+        }
+
+        var runners = [];
+        for (var r = 0; r < Math.min(cap, keys.length); r++) { runners.push(next()); }
+        Promise.all(runners).then(function () {
+            btn.disabled = false;
+            btn.textContent = doneLabel;
+        });
+    }
+
+    // Assemble the copy-as-Markdown payload from the server-rendered base plus whatever
+    // per-row summaries are currently loaded in the DOM (D8).
+    function assembleMarkdown() {
+        var base = "";
+        var ta = document.getElementById("tr-markdown");
+        if (ta) { base = ta.value; }
+
+        var rows = document.querySelectorAll(".tr-summary-row");
+        var sections = [];
+        for (var i = 0; i < rows.length; i++) {
+            var panel = rows[i].querySelector(".tr-summary-panel");
+            if (!panel || panel.getAttribute("data-loaded") !== "1") { continue; }
+            var text = panel.querySelector(".tr-summary-text");
+            var lis = panel.querySelectorAll(".tr-summary-highlights li");
+            if (!text && lis.length === 0) { continue; }
+
+            var main = rows[i].previousElementSibling;
+            var labelCell = main ? main.querySelector("td:not(.tr-expander-col):not(.tr-num)") : null;
+            var label = labelCell ? labelCell.textContent.trim() : rows[i].getAttribute("data-row-key");
+
+            var block = ["### " + label];
+            if (text) { block.push(text.textContent); }
+            if (lis.length > 0) {
+                block.push("");
+                for (var j = 0; j < lis.length; j++) { block.push("- " + lis[j].textContent); }
+            }
+            sections.push(block.join("\n"));
+        }
+
+        if (sections.length > 0) {
+            base = base.replace(/\n+$/, "") + "\n\n## Row summaries\n\n" + sections.join("\n\n") + "\n";
+        }
+        return base;
+    }
+
+    // Exposed for the copy-as-Markdown assembler and reuse by other scripts (Task 10).
+    window.TimeReportSummaries = { load: loadSummary, summaryRow: summaryRow, assembleMarkdown: assembleMarkdown };
 })();

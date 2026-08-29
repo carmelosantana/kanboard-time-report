@@ -210,4 +210,27 @@ class TemplateAssetsTest extends Base
         // XSS-safety: model text set via textContent, never innerHTML of untrusted data.
         $this->assertStringContainsString('textContent', $js);
     }
+
+    // ── Task 10: Generate all + client-side Markdown ───────────────────────────
+
+    public function testGenerateAllAndMarkdownAssemblerInJs(): void
+    {
+        $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');
+        $this->assertStringContainsString('data-tr-generate-all', $js, 'JS must handle the bulk Generate all action');
+        $this->assertStringContainsString('data-progress', $js, 'bulk fill must show progress');
+        $this->assertStringContainsString('assembleMarkdown', $js, 'copy must assemble Markdown client-side');
+        $this->assertStringContainsString('Row summaries', $js, 'assembler must append loaded per-row summaries');
+        // Cache-respecting: an already-loaded row is skipped during bulk fill.
+        $this->assertStringContainsString('data-loaded', $js);
+    }
+
+    public function testCopyMarkdownUsesAssembler(): void
+    {
+        $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');
+        $this->assertMatchesRegularExpression(
+            '/copyMarkdown[\s\S]*?TimeReportSummaries\.assembleMarkdown/',
+            $js,
+            'copyMarkdown must prefer the client-side assembler'
+        );
+    }
 }
