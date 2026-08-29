@@ -22,14 +22,7 @@ class TimeReportController extends BaseController
     public function index(): void
     {
         $userId = $this->userSession->getId();
-        $projectIds = $this->projectPermissionModel->getActiveProjectIds($userId);
-        $projects = [];
-        foreach ($projectIds as $pid) {
-            $p = $this->projectModel->getById((int) $pid);
-            if (! empty($p)) {
-                $projects[(int) $pid] = $p['name'];
-            }
-        }
+        $projects = $this->accessibleProjects($userId);
 
         $values = [
             'start_date'  => date('Y-m-01'),
@@ -41,25 +34,14 @@ class TimeReportController extends BaseController
             $values['project_id'] = $selected;
         }
 
-        // Admins short-circuit; otherwise check the projects already being listed, so
-        // this adds no query beyond the getById() loop above.
-        $canReportOthers = $this->userSession->isAdmin();
-        if (! $canReportOthers) {
-            foreach (array_keys($projects) as $pid) {
-                if ($this->timeReportModel->canReportOnOthers((int) $pid, $userId)) {
-                    $canReportOthers = true;
-                    break;
-                }
-            }
-        }
-
         $this->response->html($this->helper->layout->app('TimeReport:report/form', [
             'title'             => t('Time Report'),
             'projects'          => $projects,
             'ai_enabled'        => $this->isAiEnabled(),
             'profiles'          => $this->aiProfiles(),
             'values'            => $values,
-            'can_report_others' => $canReportOthers,
+            'can_report_others' => $this->canReportOnAnyProject($userId),
+            'send_descriptions' => $this->timeReportModel->sendDescriptionsEnabled(),
         ]));
     }
 
@@ -68,15 +50,54 @@ class TimeReportController extends BaseController
     {
         $this->checkCSRFForm();
         $report = $this->buildReportFromRequest();
+        $this->renderReport($report);
+    }
 
-        $markdown = $this->helper->timeReport->toMarkdown($report);
-
+    /**
+     * Render the report screen with the inline control bar's data (Option B).
+     *
+     * Carries the accessible projects, AI profiles and permission flag so the
+     * collapse-to-summary "Edit filters" panel can re-submit to generate() in place.
+     */
+    protected function renderReport(array $report): void
+    {
+        $userId = $this->userSession->getId();
         $this->response->html($this->helper->layout->app('TimeReport:report/show', [
-            'title'      => t('Time Report'),
-            'report'     => $report,
-            'markdown'   => $markdown,
-            'ai_enabled' => $this->isAiEnabled(),
+            'title'             => t('Time Report'),
+            'report'            => $report,
+            'markdown'          => $this->helper->timeReport->toMarkdown($report),
+            'ai_enabled'        => $this->isAiEnabled(),
+            'projects'          => $this->accessibleProjects($userId),
+            'profiles'          => $this->aiProfiles(),
+            'can_report_others' => $this->canReportOnAnyProject($userId),
         ]));
+    }
+
+    /** Accessible projects as id => name, for the report form and the inline control bar. */
+    protected function accessibleProjects(int $userId): array
+    {
+        $projects = [];
+        foreach ($this->projectPermissionModel->getActiveProjectIds($userId) as $pid) {
+            $p = $this->projectModel->getById((int) $pid);
+            if (! empty($p)) {
+                $projects[(int) $pid] = $p['name'];
+            }
+        }
+        return $projects;
+    }
+
+    /** True when the user may report on others in at least one accessible project. */
+    protected function canReportOnAnyProject(int $userId): bool
+    {
+        if ($this->userSession->isAdmin()) {
+            return true;
+        }
+        foreach (array_keys($this->accessibleProjects($userId)) as $pid) {
+            if ($this->timeReportModel->canReportOnOthers((int) $pid, $userId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** One-click report for a project: read-only GET, fixed quick defaults. No CSRF (no state change). */
@@ -92,14 +113,7 @@ class TimeReportController extends BaseController
             return;
         }
 
-        $markdown = $this->helper->timeReport->toMarkdown($report);
-
-        $this->response->html($this->helper->layout->app('TimeReport:report/show', [
-            'title'      => t('Time Report'),
-            'report'     => $report,
-            'markdown'   => $markdown,
-            'ai_enabled' => $this->isAiEnabled(),
-        ]));
+        $this->renderReport($report);
     }
 
     /** Fixed quick defaults: this month to date, per task, no detail, no AI. Access-guarded by the model. */
@@ -370,8 +384,23 @@ class TimeReportController extends BaseController
         return in_array($submitted, $ids, true) ? $submitted : null;
     }
 
+    /**
+     * Normalize a submitted date to ISO YYYY-MM-DD, or fall back.
+     *
+     * Accepts an ISO date directly and, so the native datepicker (form->date, which
+     * posts in the user's configured date format) round-trips correctly, parses any
+     * user-format date via the DateParser. Unparseable input falls back.
+     */
     private function validDate(string $value, string $fallback): string
     {
-        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1 ? $value : $fallback;
+        $value = trim($value);
+        if ($value === '') {
+            return $fallback;
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1) {
+            return $value;
+        }
+        $ts = (int) $this->dateParser->getTimestamp($value);
+        return $ts > 0 ? date('Y-m-d', $ts) : $fallback;
     }
 }

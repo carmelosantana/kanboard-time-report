@@ -24,6 +24,14 @@
 }
 @keyframes tr-copy-fade { 0% { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
 
+/* Inline control bar (Option B) */
+.tr-controlbar { margin: 1em 0; padding: 0.5em 0.75em; border: 1px solid rgba(0,0,0,0.08); border-radius: 4px; background: rgba(0,0,0,0.02); }
+.tr-controlbar-summary { display: flex; justify-content: space-between; align-items: center; gap: 1em; flex-wrap: wrap; }
+.tr-controlbar-crumbs { color: #555; }
+.tr-controlbar-ai { color: #8a63d2; font-weight: bold; }
+.tr-filters { margin-top: 0.75em; padding-top: 0.75em; border-top: 1px solid rgba(0,0,0,0.08); }
+.tr-edit-filters { white-space: nowrap; }
+
 /* Per-row AI summaries */
 .tr-expander-col { width: 2em; text-align: center; }
 .tr-expander { background: none; border: 0; cursor: pointer; color: #4b9fd5; padding: 0.2em 0.4em; font-size: 1em; }

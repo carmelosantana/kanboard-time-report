@@ -229,6 +229,18 @@
     }
 
     document.addEventListener("click", function (e) {
+        var editBtn = e.target.closest("[data-tr-edit-filters]");
+        if (editBtn) {
+            e.preventDefault();
+            var filters = document.getElementById("tr-filters");
+            if (filters) {
+                var open = filters.hasAttribute("hidden");
+                if (open) { filters.removeAttribute("hidden"); } else { filters.setAttribute("hidden", ""); }
+                editBtn.setAttribute("aria-expanded", open ? "true" : "false");
+            }
+            return;
+        }
+
         var toggleBtn = e.target.closest("[data-tr-row-toggle]");
         if (toggleBtn) { e.preventDefault(); toggle(toggleBtn); return; }
 

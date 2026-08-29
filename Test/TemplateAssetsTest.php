@@ -164,6 +164,41 @@ class TemplateAssetsTest extends Base
         $this->assertMatchesRegularExpression("/_breakdown.*ai_enabled/s", $src);
     }
 
+    // ── Task 9: inline control bar (Option B) + datepicker ─────────────────────
+
+    public function testFormUsesNativeDatepickerForDates(): void
+    {
+        $src = $this->tpl('form.php');
+        $this->assertStringContainsString("form->date(t('Start date'), 'start_date'", $src, 'start date must use the datepicker helper');
+        $this->assertStringContainsString("form->date(t('End date'), 'end_date'", $src, 'end date must use the datepicker helper');
+        $this->assertStringNotContainsString("form->text('start_date'", $src, 'plain text date input must be gone');
+    }
+
+    public function testFormPrivacyNoteReflectsOptInState(): void
+    {
+        $src = $this->tpl('form.php');
+        $this->assertStringContainsString('send_descriptions', $src, 'the privacy note must branch on the opt-in state');
+        $this->assertStringContainsString('subtasks', $src, 'the note must mention completed subtasks are sent');
+    }
+
+    public function testShowHasInlineControlBar(): void
+    {
+        $src = $this->tpl('show.php');
+        $this->assertStringContainsString('tr-controlbar', $src, 'Option B control bar container');
+        $this->assertStringContainsString('data-tr-edit-filters', $src, 'collapse-to-summary edit toggle');
+        $this->assertStringContainsString('id="tr-filters"', $src, 'the inline filter form');
+        $this->assertMatchesRegularExpression("/id=\"tr-filters\".*?'generate'/s", $src, 'the filter form re-submits to generate');
+        $this->assertStringContainsString("form->date(t('Start date'), 'start_date'", $src, 'control bar dates use the datepicker');
+        $this->assertStringContainsString('form="tr-filters"', $src, 'the Update button submits the filter form');
+        $this->assertStringContainsString('data-tr-generate-all', $src, 'Generate all summaries action');
+    }
+
+    public function testEditFiltersToggleInJs(): void
+    {
+        $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');
+        $this->assertStringContainsString('data-tr-edit-filters', $js, 'JS must toggle the filter panel');
+    }
+
     public function testSummaryJsIsDelegatedAndFetchesEndpoint(): void
     {
         $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');

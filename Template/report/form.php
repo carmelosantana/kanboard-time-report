@@ -8,11 +8,9 @@
     <?= $this->form->label(t('Project'), 'project_id') ?>
     <?= $this->form->select('project_id', $projects, $values, [], ['required']) ?>
 
-    <?= $this->form->label(t('Start date'), 'start_date') ?>
-    <?= $this->form->text('start_date', $values, [], ['placeholder="YYYY-MM-DD"', 'required']) ?>
+    <?= $this->form->date(t('Start date'), 'start_date', $values, [], ['required']) ?>
 
-    <?= $this->form->label(t('End date'), 'end_date') ?>
-    <?= $this->form->text('end_date', $values, [], ['placeholder="YYYY-MM-DD"', 'required']) ?>
+    <?= $this->form->date(t('End date'), 'end_date', $values, [], ['required']) ?>
 
     <?= $this->form->label(t('Breakdown'), 'granularity') ?>
     <?= $this->form->select('granularity', ['day' => t('Per day'), 'week' => t('Per week'), 'task' => t('Per task'), 'total' => t('Total only'), 'user' => t('By user')], $values) ?>
@@ -26,7 +24,11 @@
         <label><?= $this->form->checkbox('include_detail', t('Include completed-task detail'), 1) ?></label>
         <?php if ($ai_enabled): ?>
             <label><?= $this->form->checkbox('include_ai_summary', t('Add AI narrative summary'), 1) ?></label>
-            <p class="tr-ai-note"><?= t('Only completed-task titles, hours, categories, tags and dates are sent to the AI provider.') ?></p>
+            <?php if (! empty($send_descriptions)): ?>
+                <p class="tr-ai-note"><?= t('Task titles, hours, categories, tags, dates, completed subtasks AND task descriptions are sent to the AI provider. Comments are never sent.') ?></p>
+            <?php else: ?>
+                <p class="tr-ai-note"><?= t('Task titles, hours, categories, tags, dates and completed subtasks are sent to the AI provider. Descriptions and comments are not (an admin can enable descriptions in Settings → Integrations).') ?></p>
+            <?php endif ?>
             <?php if (! empty($profiles)): ?>
                 <?= $this->form->label(t('AI profile'), 'profile_id') ?>
                 <?= $this->form->select('profile_id', array_column($profiles, 'label', 'id')) ?>
