@@ -136,8 +136,12 @@ class AiSummaryModel extends Base
             }
             $highlights = [];
             foreach ($m['highlights'] ?? [] as $h) {
-                if (is_string($h) && trim($h) !== '') {
-                    $highlights[] = $h;
+                if (! is_string($h)) {
+                    continue;
+                }
+                $clean = self::cleanHighlight($h);
+                if ($clean !== '') {
+                    $highlights[] = $clean;
                 }
             }
             if ($highlights !== []) {
@@ -197,12 +201,29 @@ class AiSummaryModel extends Base
         $highlights = [];
         if (isset($decoded['highlights']) && is_array($decoded['highlights'])) {
             foreach ($decoded['highlights'] as $h) {
-                if (is_string($h) && trim($h) !== '') {
-                    $highlights[] = $h;
+                if (! is_string($h)) {
+                    continue;
+                }
+                $clean = self::cleanHighlight($h);
+                if ($clean !== '') {
+                    $highlights[] = $clean;
                 }
             }
         }
 
         return ['summary' => $summary, 'highlights' => $highlights];
+    }
+
+    /**
+     * Strip a single leading markdown bullet marker (-, *, •, –, —) plus its trailing
+     * space from a highlight, so a model that returns "- Shipped the API" renders as a
+     * clean list item instead of a double bullet. A space after the marker is required,
+     * so a meaningful leading "-5%" is left intact.
+     */
+    private static function cleanHighlight(string $h): string
+    {
+        $h = trim($h);
+        $h = preg_replace('/^[-*\x{2022}\x{2013}\x{2014}]+(\s+|$)/u', '', $h);
+        return trim((string) $h);
     }
 }

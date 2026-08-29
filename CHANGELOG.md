@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2 — 2026-08-29
+
+### Fixed
+
+- AI summary highlights that a model returned with a leading bullet marker (e.g. `- Shipped the API`) no longer render as a double bullet; the leading marker is stripped, and a bullet-only entry is dropped.
+
 ## 1.4.1 — 2026-08-28
 
 ### Fixed

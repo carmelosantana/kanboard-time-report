@@ -56,6 +56,16 @@ class AiSummaryModelTest extends Base
         $this->assertSame(['ok', 'fine'], $out['highlights']);
     }
 
+    public function testSummarizeStripsLeadingBulletMarkersFromHighlights(): void
+    {
+        $m = $this->model(['summary' => 'x', 'highlights' => [
+            '- Dashed item', '* Starred item', '• Bulleted item', '  -   Spaced dash', 'Plain item', '- ',
+        ]]);
+        $out = $m->summarize($this->detail());
+        // Each leading bullet marker + space is stripped; a bullet-only entry drops out.
+        $this->assertSame(['Dashed item', 'Starred item', 'Bulleted item', 'Spaced dash', 'Plain item'], $out['highlights']);
+    }
+
     /**
      * Boundary: the payload carries titles/hours/category/tags/dates + completed
      * subtasks, and the description ONLY when the gather layer supplied one (opt-in on).
