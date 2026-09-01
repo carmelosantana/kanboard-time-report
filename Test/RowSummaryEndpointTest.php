@@ -70,8 +70,8 @@ class RowSummaryEndpointTest extends Base
         $this->container['db']->table('subtasks')->eq('id', $subId)->update(['time_spent' => 2.0]);
         $this->container['db']->table('subtask_time_tracking')->insert([
             'subtask_id' => $subId, 'user_id' => 1,
-            'start' => strtotime(date('Y-m-05') . ' 09:00:00'),
-            'end'   => strtotime(date('Y-m-05') . ' 11:00:00'),
+            'start' => strtotime(date('Y-m-01') . ' 09:00:00'),
+            'end'   => strtotime(date('Y-m-01') . ' 11:00:00'),
             'time_spent' => 2.0,
         ]);
         $this->container['taskStatusModel']->close($taskId);
@@ -86,8 +86,8 @@ class RowSummaryEndpointTest extends Base
         $this->container['db']->table('subtasks')->eq('id', $subId)->update(['time_spent' => 1.0]);
         $this->container['db']->table('subtask_time_tracking')->insert([
             'subtask_id' => $subId, 'user_id' => 1,
-            'start' => strtotime(date('Y-m-05') . ' 09:00:00'),
-            'end'   => strtotime(date('Y-m-05') . ' 10:00:00'),
+            'start' => strtotime(date('Y-m-01') . ' 09:00:00'),
+            'end'   => strtotime(date('Y-m-01') . ' 10:00:00'),
             'time_spent' => 1.0,
         ]);
         $this->container['taskStatusModel']->close($taskId);
@@ -189,7 +189,7 @@ class RowSummaryEndpointTest extends Base
     {
         $this->wireServices();
         [$projectId, $taskId] = $this->seedTaskWithSubtask('Eta');
-        $dayKey = date('Y-m-05');
+        $dayKey = date('Y-m-01');
         $c = $this->controller();
 
         $out = $c->run($this->values($projectId, 'day', $dayKey));
@@ -209,7 +209,7 @@ class RowSummaryEndpointTest extends Base
     {
         $this->wireServices();
         [$projectId, $taskId, $subId] = $this->seedTaskWithSubtask('Kappa');
-        $dayKey = date('Y-m-05');
+        $dayKey = date('Y-m-01');
         $c = $this->controller();
 
         // Generate ONLY the member task summary (task row) — the day aggregate is never
@@ -266,7 +266,7 @@ class RowSummaryEndpointTest extends Base
             ['id' => 'p-luna', 'label' => 'Luna', 'provider' => 'openai', 'model' => 'gpt-5-luna'],
         ])]);
         [$projectId, $taskId] = $this->seedTaskWithSubtask('Mu');
-        $dayKey = date('Y-m-05');
+        $dayKey = date('Y-m-01');
         $c = $this->controller();
 
         $values = $this->values($projectId, 'day', $dayKey);
@@ -354,7 +354,7 @@ class RowSummaryEndpointTest extends Base
     {
         $this->wireServices();
         [$projectId, $taskId, $subId] = $this->seedTaskWithSubtask('Theta');
-        $dayKey = date('Y-m-05');
+        $dayKey = date('Y-m-01');
         $c = $this->controller();
 
         $c->run($this->values($projectId, 'day', $dayKey)); // generate member + agg
