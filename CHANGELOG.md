@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.3 — 2026-09-04
+
+### Fixed
+
+- **AI summaries now work with OpenAI (ChatGPT) profiles.** The summary JSON schema omitted `additionalProperties: false`, which OpenAI's strict Structured Outputs requires; OpenAI rejected the request with an HTTP 400 and the report showed *"The summary could not be generated."* The schema is now strict-mode compliant, so summaries generate on OpenAI as well as on the lenient providers (Anthropic, Ollama) where they already worked.
+
 ## 1.4.2 — 2026-08-29
 
 ### Fixed

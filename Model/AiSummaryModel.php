@@ -17,15 +17,21 @@ use Kanboard\Plugin\AiConnector\Model\ProviderRegistry;
  */
 class AiSummaryModel extends Base
 {
+    // additionalProperties:false + every property in `required` is mandatory for
+    // OpenAI Chat Completions strict Structured Outputs (the "ChatGPT" profile).
+    // Without it OpenAI rejects the request with an HTTP 400 and the report shows
+    // "The summary could not be generated." Lenient providers (Anthropic, Ollama)
+    // do not require it, so the omission only ever failed on OpenAI.
     public const SCHEMA = [
         'name'   => 'time_report_summary',
         'schema' => [
-            'type'       => 'object',
-            'properties' => [
+            'type'                 => 'object',
+            'properties'           => [
                 'summary'    => ['type' => 'string'],
                 'highlights' => ['type' => 'array', 'items' => ['type' => 'string']],
             ],
-            'required' => ['summary', 'highlights'],
+            'required'             => ['summary', 'highlights'],
+            'additionalProperties' => false,
         ],
     ];
 

@@ -179,4 +179,26 @@ class AiSummaryModelTest extends Base
         $this->assertSame('A productive day.', $out['summary']);
         $this->assertSame(['Two tasks done'], $out['highlights']);
     }
+
+    /**
+     * OpenAI Chat Completions strict Structured Outputs (used by the "ChatGPT" /
+     * openai profile) rejects any schema whose objects omit
+     * `additionalProperties: false` OR do not list every property in `required`,
+     * with an HTTP 400 — which surfaces to the user as "The summary could not be
+     * generated." The schema must therefore satisfy strict mode so it works on
+     * OpenAI as well as on the lenient providers (Anthropic, Ollama).
+     */
+    public function testSchemaIsOpenAiStrictModeCompliant(): void
+    {
+        $inner = AiSummaryModel::SCHEMA['schema'];
+
+        $this->assertArrayHasKey('additionalProperties', $inner, 'strict mode requires additionalProperties on every object');
+        $this->assertFalse($inner['additionalProperties'], 'strict mode requires additionalProperties: false');
+
+        $propertyKeys = array_keys($inner['properties']);
+        sort($propertyKeys);
+        $required = $inner['required'];
+        sort($required);
+        $this->assertSame($propertyKeys, $required, 'strict mode requires every property to be listed in required');
+    }
 }
