@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.4 — 2026-09-21
+
+### Fixed
+
+- **AI summaries are now actually cached on MySQL and Postgres.** Cached summaries were written to `task_has_metadata` / `project_has_metadata`, whose `value` column is `VARCHAR(255)` on both engines — but a single cached entry serializes to over 500 characters, so every write failed with `SQLSTATE[22001]` ("Data too long for column 'value'", MySQL 1406) or truncated silently outside strict mode. Both caches now live in the plugin's own tables, added by a schema migration that runs automatically on upgrade. SQLite installs were unaffected.
+
+### Changed
+
+- **Day/week summaries are stored one row per entry** instead of one JSON map per project. This removes the read-modify-write of the whole map on every save, closes a lost-update window between concurrent requests, and retires the 200-entry cap that existed only to bound the single value — cached day/week summaries are no longer evicted.
+- The superseded `timereport_ai_summary` and `timereport_ai_agg` metadata rows are deleted by the migration. They are a regenerable cache, nothing else reads them, and on MySQL most were truncated and unreadable.
+
 ## 1.4.3 — 2026-09-04
 
 ### Fixed

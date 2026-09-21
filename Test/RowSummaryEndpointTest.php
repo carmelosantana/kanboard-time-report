@@ -1,6 +1,7 @@
 <?php
 
 require_once 'tests/units/Base.php';
+require_once __DIR__ . '/SummarySchemaHelper.php';
 
 use KanboardTests\units\Base;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
@@ -16,6 +17,8 @@ use Kanboard\Plugin\TimeReport\Controller\TimeReportController;
  */
 class RowSummaryEndpointTest extends Base
 {
+    use SummarySchemaHelper;
+
     private int $taskCalls = 0;
     private int $aggCalls = 0;
     public ?string $lastTaskProfile = 'unset';
@@ -24,6 +27,7 @@ class RowSummaryEndpointTest extends Base
     protected function setUp(): void
     {
         parent::setUp();
+        $this->createSummarySchema();
         // The endpoint reads the current user from the session; log in as user 1 (admin),
         // the owner of every project seeded below, so assertProjectAccess passes.
         $_SESSION['user'] = ['id' => 1, 'role' => 'app-admin'];

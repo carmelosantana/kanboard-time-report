@@ -72,6 +72,14 @@ The AI narrative summary produces poor results and is structurally limited:
 
 ### 6.3 Cache store
 
+> **Superseded (2026-09-21).** The metadata-column design below was wrong: `task_has_metadata.value`
+> and `project_has_metadata.value` are **VARCHAR(255)**, not TEXT, on both MySQL and Postgres, so
+> every write above 255 characters failed with `SQLSTATE[22001]` (MySQL 1406) or truncated silently.
+> A single entry serializes to ~520 characters. Both caches now live in the plugin's own tables
+> (`Schema/version_1`), with aggregates stored one row per entry rather than one JSON map per
+> project. The pruning cap described below no longer exists.
+
+
 - **Task summaries** → `task_has_metadata` via `TaskMetadataModel::save/get`, key `timereport_ai_summary`, value = JSON `{hash, summary, highlights, generated_at}`. One entry per task (shared across profiles per D6); regenerate overwrites.
 - **Aggregate summaries** → `project_has_metadata` via `ProjectMetadataModel`, key `timereport_ai_agg`, value = JSON map `{ "<granularity>:<rowkey>": {hash, summary, highlights, generated_at} }`. Pruned opportunistically to keep the TEXT value bounded.
 - New thin `AiSummaryCache` model wraps read/write/hash-check so the controller and CSV export share one code path.

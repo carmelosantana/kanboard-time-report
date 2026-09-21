@@ -1,16 +1,25 @@
 <?php
 
 require_once 'tests/units/Base.php';
+require_once __DIR__ . '/SummarySchemaHelper.php';
 
 use KanboardTests\units\Base;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
 
 /**
- * Task 4 — the thin cache over task + project metadata. One code path shared by the
- * rowSummary endpoint and the CSV export, with fresh/stale/missing classification.
+ * Task 4 — the thin cache over the plugin's own summary tables. One code path shared
+ * by the rowSummary endpoint and the CSV export, with fresh/stale/missing classification.
  */
 class AiSummaryCacheTest extends Base
 {
+    use SummarySchemaHelper;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->createSummarySchema();
+    }
+
     private function cache(): AiSummaryCache
     {
         return new AiSummaryCache($this->container);
@@ -70,17 +79,5 @@ class AiSummaryCacheTest extends Base
         $this->assertSame('week sum', $week['summary']);
         // Distinct granularity/key does not collide.
         $this->assertNull($cache->getAggregate($projectId, 'day', '2026-03-11'));
-    }
-
-    public function testAggregateMapIsPrunedToBound(): void
-    {
-        $projectId = (int) $this->container['projectModel']->create(['name' => 'Prune'], 1, true);
-        $cache = $this->cache();
-        for ($i = 0; $i < AiSummaryCache::AGG_MAX_ENTRIES + 25; $i++) {
-            $cache->saveAggregate($projectId, 'day', '2026-01-' . str_pad((string) ($i % 28 + 1), 2, '0', STR_PAD_LEFT) . '-' . $i, 'H' . $i, 's' . $i, []);
-        }
-        $raw = $this->container['projectMetadataModel']->get($projectId, AiSummaryCache::AGG_KEY, '');
-        $map = json_decode($raw, true);
-        $this->assertLessThanOrEqual(AiSummaryCache::AGG_MAX_ENTRIES, count($map), 'aggregate map must stay bounded');
     }
 }
