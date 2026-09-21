@@ -12,7 +12,8 @@ use Kanboard\Plugin\TimeReport\Helper\TimeReportHelper;
 /**
  * TimeReport — self-only consultant hours report for one project + date range.
  *
- * Pure query→render: no persisted state, no DB migration. AI narrative summary
+ * Pure query→render over the time data itself: the report persists nothing. The
+ * optional AI narrative summary is cached in the plugin's own tables (Schema/),
  * is optional (AiConnector) and degrades to fully manual when absent.
  */
 class Plugin extends Base

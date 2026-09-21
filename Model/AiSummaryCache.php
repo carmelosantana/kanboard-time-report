@@ -7,62 +7,70 @@ use Kanboard\Core\Base;
 /**
  * AiSummaryCache — the one read/write/classify path over per-row AI summaries.
  *
- * Task summaries live in task_has_metadata (one entry per task, shared across AI
- * profiles and users per the spec's D6). Aggregate (day/week) summaries live in a
- * single project_has_metadata JSON map keyed "<granularity>:<rowkey>", pruned to a
- * bounded size so the TEXT value cannot grow without limit.
+ * Both caches live in the plugin's own tables (Schema/version_1). They used to
+ * live in task_has_metadata / project_has_metadata, whose `value` column is
+ * VARCHAR(255) on MySQL and Postgres — far too small for even a single entry,
+ * which serializes to over 500 characters.
  *
- * A cached entry is {hash, summary, highlights[], generated_at}. Freshness is a pure
- * comparison of the stored hash against the freshly-computed content hash, so the
- * controller and the CSV export classify identically.
+ * Task summaries are one row per task (shared across AI profiles and users per
+ * the spec's D6). Aggregate (day/week) summaries are one row per
+ * project+granularity+rowkey, so a save touches only its own row: no
+ * read-modify-write of a whole-project map, and no lost updates when two
+ * generate requests run concurrently. Both cascade with their parent.
+ *
+ * A cached entry is {hash, summary, highlights[], generated_at}. Freshness is a
+ * pure comparison of the stored hash against the freshly-computed content hash,
+ * so the controller and the CSV export classify identically.
  */
 class AiSummaryCache extends Base
 {
-    public const TASK_KEY = 'timereport_ai_summary';
-    public const AGG_KEY  = 'timereport_ai_agg';
-
-    /** Cap on aggregate entries per project; oldest (by generated_at) are pruned first. */
-    public const AGG_MAX_ENTRIES = 200;
+    public const TASK_TABLE = 'timereport_task_summaries';
+    public const AGG_TABLE  = 'timereport_aggregate_summaries';
 
     /** @return array{hash:string,summary:string,highlights:list<string>,generated_at:int}|null */
     public function getTask(int $taskId): ?array
     {
-        $raw = (string) $this->taskMetadataModel->get($taskId, self::TASK_KEY, '');
-        return $this->decode($raw);
+        $row = $this->db->table(self::TASK_TABLE)->eq('task_id', $taskId)->findOne();
+
+        return is_array($row) ? $this->fromRow($row) : null;
     }
 
     public function saveTask(int $taskId, string $hash, string $summary, array $highlights): void
     {
-        $this->taskMetadataModel->save($taskId, [
-            self::TASK_KEY => $this->encode($hash, $summary, $highlights),
-        ]);
+        $this->upsert(
+            $this->db->table(self::TASK_TABLE)->eq('task_id', $taskId),
+            $this->db->table(self::TASK_TABLE),
+            $this->toRow($hash, $summary, $highlights),
+            ['task_id' => $taskId]
+        );
     }
 
     /** @return array{hash:string,summary:string,highlights:list<string>,generated_at:int}|null */
     public function getAggregate(int $projectId, string $granularity, string $rowKey): ?array
     {
-        $map = $this->aggregateMap($projectId);
-        $k = self::aggMapKey($granularity, $rowKey);
-        if (! isset($map[$k]) || ! is_array($map[$k])) {
-            return null;
-        }
-        return $this->normalise($map[$k]);
+        $row = $this->db->table(self::AGG_TABLE)
+            ->eq('project_id', $projectId)
+            ->eq('granularity', $granularity)
+            ->eq('row_key', $rowKey)
+            ->findOne();
+
+        return is_array($row) ? $this->fromRow($row) : null;
     }
 
     public function saveAggregate(int $projectId, string $granularity, string $rowKey, string $hash, string $summary, array $highlights): void
     {
-        $map = $this->aggregateMap($projectId);
-        $map[self::aggMapKey($granularity, $rowKey)] = [
-            'hash'         => $hash,
-            'summary'      => $summary,
-            'highlights'   => array_values(array_map('strval', $highlights)),
-            'generated_at' => time(),
+        $identity = [
+            'project_id'  => $projectId,
+            'granularity' => $granularity,
+            'row_key'     => $rowKey,
         ];
-        $map = self::prune($map, self::AGG_MAX_ENTRIES);
 
-        $this->projectMetadataModel->save($projectId, [
-            self::AGG_KEY => json_encode($map, JSON_UNESCAPED_UNICODE),
-        ]);
+        $matching = $this->db->table(self::AGG_TABLE)
+            ->eq('project_id', $projectId)
+            ->eq('granularity', $granularity)
+            ->eq('row_key', $rowKey);
+
+        $this->upsert($matching, $this->db->table(self::AGG_TABLE), $this->toRow($hash, $summary, $highlights), $identity);
     }
 
     /** missing when absent, fresh when the stored hash matches, stale otherwise. */
@@ -74,66 +82,51 @@ class AiSummaryCache extends Base
         return (string) ($cached['hash'] ?? '') === $currentHash ? 'fresh' : 'stale';
     }
 
-    public static function aggMapKey(string $granularity, string $rowKey): string
+    /**
+     * Update the matching row or insert it with its identity columns.
+     *
+     * $matching and $insertTable are separate query builders because picodb
+     * conditions are stateful — reusing one after a failed match would carry
+     * its WHERE clause into the insert.
+     */
+    private function upsert(\PicoDb\Table $matching, \PicoDb\Table $insertTable, array $values, array $identity): void
     {
-        return $granularity . ':' . $rowKey;
-    }
-
-    /** Drop the oldest entries by generated_at until at most $max remain. */
-    public static function prune(array $map, int $max): array
-    {
-        if (count($map) <= $max) {
-            return $map;
+        if ($matching->exists()) {
+            $matching->update($values);
+            return;
         }
-        uasort($map, static fn ($a, $b) => (int) ($b['generated_at'] ?? 0) <=> (int) ($a['generated_at'] ?? 0));
-        return array_slice($map, 0, $max, true);
+
+        $insertTable->insert($values + $identity);
     }
 
-    /** @return array<string,array> */
-    private function aggregateMap(int $projectId): array
+    /** @return array{hash:string,summary:string,highlights:string,generated_at:int} */
+    private function toRow(string $hash, string $summary, array $highlights): array
     {
-        $raw = (string) $this->projectMetadataModel->get($projectId, self::AGG_KEY, '');
-        if ($raw === '') {
-            return [];
-        }
-        $decoded = json_decode($raw, true);
-        return is_array($decoded) ? $decoded : [];
-    }
-
-    private function encode(string $hash, string $summary, array $highlights): string
-    {
-        return json_encode([
+        return [
             'hash'         => $hash,
             'summary'      => $summary,
-            'highlights'   => array_values(array_map('strval', $highlights)),
+            'highlights'   => (string) json_encode(array_values(array_map('strval', $highlights)), JSON_UNESCAPED_UNICODE),
             'generated_at' => time(),
-        ], JSON_UNESCAPED_UNICODE);
-    }
-
-    /** @return array{hash:string,summary:string,highlights:list<string>,generated_at:int}|null */
-    private function decode(string $raw): ?array
-    {
-        if ($raw === '') {
-            return null;
-        }
-        $decoded = json_decode($raw, true);
-        return is_array($decoded) ? $this->normalise($decoded) : null;
+        ];
     }
 
     /** @return array{hash:string,summary:string,highlights:list<string>,generated_at:int} */
-    private function normalise(array $entry): array
+    private function fromRow(array $row): array
     {
+        $decoded    = json_decode((string) ($row['highlights'] ?? ''), true);
         $highlights = [];
-        foreach ($entry['highlights'] ?? [] as $h) {
+
+        foreach (is_array($decoded) ? $decoded : [] as $h) {
             if (is_string($h)) {
                 $highlights[] = $h;
             }
         }
+
         return [
-            'hash'         => (string) ($entry['hash'] ?? ''),
-            'summary'      => (string) ($entry['summary'] ?? ''),
+            'hash'         => (string) ($row['hash'] ?? ''),
+            'summary'      => (string) ($row['summary'] ?? ''),
             'highlights'   => $highlights,
-            'generated_at' => (int) ($entry['generated_at'] ?? 0),
+            'generated_at' => (int) ($row['generated_at'] ?? 0),
         ];
     }
 }
