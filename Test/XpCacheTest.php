@@ -136,4 +136,38 @@ class XpCacheTest extends Base
 
         $this->assertSame(0, $this->container['db']->table(XpCache::TABLE)->count());
     }
+
+    public function testConflictingLeftoverRowDoesNotBreakAColdRead(): void
+    {
+        $alice = $this->user('alice');
+        $p = $this->project();
+        $this->subtask($this->task($p), $alice, 2);
+        $this->container['db']->table(XpCache::TABLE)->insert(['user_id' => $alice, 'project_id' => $p, 'xp' => 999, 'party_xp' => null, 'computed_at' => 0]);
+
+        $this->assertSame(['total' => 10, 'by_project' => [$p => 10], 'party_xp' => null], $this->cache()->lifetime($alice));
+    }
+
+    public function testFailedCacheWriteStillReturnsComputedValues(): void
+    {
+        $alice = $this->user('alice');
+        $p = $this->project();
+        $this->subtask($this->task($p), $alice, 2);
+        // A write error PicoDb does not swallow (unlike duplicate keys): "no such table" at insert time.
+        $this->container['db']->getConnection()->exec(
+            'CREATE TEMP TRIGGER xp_cache_write_fails BEFORE INSERT ON ' . XpCache::TABLE . ' BEGIN INSERT INTO no_such_table VALUES (1); END'
+        );
+
+        $this->assertSame(['total' => 10, 'by_project' => [$p => 10], 'party_xp' => null], $this->cache()->lifetime($alice));
+    }
+
+    public function testDeletingADoneSubtaskDropsXp(): void
+    {
+        $alice = $this->user('alice');
+        $s = $this->subtask($this->task($this->project()), $alice, 2);
+        $this->assertSame(10, $this->cache()->lifetime($alice)['total']);
+
+        $this->container['subtaskModel']->remove($s);
+
+        $this->assertSame(0, $this->cache()->lifetime($alice)['total']);
+    }
 }

@@ -3,6 +3,7 @@
 namespace Kanboard\Plugin\TimeReport\Model;
 
 use Kanboard\Core\Base;
+use PicoDb\SQLException;
 
 /**
  * Lifetime XP per user per project, plus a per-user marker row (project_id 0)
@@ -50,12 +51,19 @@ class XpCache extends Base
             }
         }
 
+        // Best-effort write: the values are already computed, and a racing
+        // rebuild or a locked database must never break the page reading them.
+        // The marker goes last, so a half-written user is simply rebuilt next time.
         $now = time();
-        $this->db->table(self::TABLE)->eq('user_id', $userId)->remove();
-        foreach ($byProject as $projectId => $xp) {
-            $this->db->table(self::TABLE)->insert(['user_id' => $userId, 'project_id' => $projectId, 'xp' => $xp, 'party_xp' => null, 'computed_at' => $now]);
+        try {
+            $this->db->table(self::TABLE)->eq('user_id', $userId)->remove();
+            foreach ($byProject as $projectId => $xp) {
+                $this->db->table(self::TABLE)->insert(['user_id' => $userId, 'project_id' => $projectId, 'xp' => $xp, 'party_xp' => null, 'computed_at' => $now]);
+            }
+            $this->db->table(self::TABLE)->insert(['user_id' => $userId, 'project_id' => self::MARKER, 'xp' => $total, 'party_xp' => $party, 'computed_at' => $now]);
+        } catch (SQLException $e) {
+            // Leave the cache cold; the next read rebuilds.
         }
-        $this->db->table(self::TABLE)->insert(['user_id' => $userId, 'project_id' => self::MARKER, 'xp' => $total, 'party_xp' => $party, 'computed_at' => $now]);
 
         return ['total' => $total, 'by_project' => $byProject, 'party_xp' => $party];
     }
