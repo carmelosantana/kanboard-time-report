@@ -500,4 +500,12 @@ class TimeReportController extends BaseController
         $ts = (int) $this->dateParser->getTimestamp($value);
         return $ts > 0 ? date('Y-m-d', $ts) : $fallback;
     }
+
+    /** POST: hide the TaskProgressBar notice for the current admin (spec Kanboard #5382). */
+    public function dismissTpbNotice(): void
+    {
+        $this->checkCSRFForm();
+        $this->userMetadataModel->save($this->userSession->getId(), [\Kanboard\Plugin\TimeReport\Helper\ProgressHelper::TPB_DISMISS_KEY => '1']);
+        $this->response->redirect($this->helper->url->to('DashboardController', 'show'));
+    }
 }

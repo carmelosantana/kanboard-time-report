@@ -66,6 +66,7 @@ class Plugin extends Base
         $this->route->addRoute('timereport/export-csv', 'TimeReportController', 'exportCsv', 'TimeReport');
         $this->route->addRoute('timereport/view', 'TimeReportController', 'view', 'TimeReport');
         $this->route->addRoute('timereport/row-summary', 'TimeReportController', 'rowSummary', 'TimeReport');
+        $this->route->addRoute('timereport/tpb-dismiss', 'TimeReportController', 'dismissTpbNotice', 'TimeReport');
 
         // ── Entry-point link in the header user dropdown ──────────────────────
         $this->template->hook->attach('template:header:dropdown', 'TimeReport:report/header_dropdown');
@@ -84,6 +85,9 @@ class Plugin extends Base
         // ── Theme-only surfaces (hidden by progress.css; a theme reveals them) ──
         $this->template->hook->attach('template:project:header:after', 'TimeReport:project/track');
         $this->template->hook->attach('template:layout:top', 'TimeReport:layout/level');
+
+        // ── Admin notice while TaskProgressBar is loaded (spec Kanboard #5382; visible, not theme-gated) ──
+        $this->template->hook->attach('template:layout:top', 'TimeReport:config/tpb_notice');
 
         // ── Assets (CSP-safe: external files, delegated JS) ───────────────────
         $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/timereport.css']);

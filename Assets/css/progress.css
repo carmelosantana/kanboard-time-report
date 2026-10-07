@@ -14,3 +14,5 @@
 
 /* TaskProgressBar coexistence (spec Kanboard #5382): one bar per card while both are installed. */
 .container-task-progress-bar { display: none; }
+.tr-tpb-notice { margin: 0; border-radius: 0; }
+.tr-tpb-notice .btn { margin-left: 0.5em; }

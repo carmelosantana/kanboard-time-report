@@ -9,6 +9,20 @@ use Kanboard\Plugin\TimeReport\Model\XpModel;
 /** View-side access to progress data for the contract templates. */
 class ProgressHelper extends Base
 {
+    public const TPB_DISMISS_KEY = 'timereport_tpb_notice_dismissed';
+
+    /** Spec Kanboard #5382: tell admins TaskProgressBar is redundant, until they dismiss it. */
+    public function tpbNoticeVisible(): bool
+    {
+        if (! $this->userSession->isLogged() || ! $this->userSession->isAdmin()) {
+            return false;
+        }
+        if (! array_key_exists('TaskProgressBar', $this->pluginLoader->getPlugins())) {
+            return false;
+        }
+        return $this->userMetadataModel->get($this->userSession->getId(), self::TPB_DISMISS_KEY, '') !== '1';
+    }
+
     public function card(array $task): array
     {
         return ProgressModel::taskMeters($task);
