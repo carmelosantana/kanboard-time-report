@@ -106,6 +106,7 @@ class ProgressContractTest extends Base
 
     public function testPluginAttachesTrackAndLevelHooks(): void
     {
+        $this->container->register(new \Kanboard\ServiceProvider\ApiProvider()); // initialize() registers JSON-RPC procedures
         (new Plugin($this->container))->initialize();
         $hook = $this->container['hook'];
         $this->assertContains('TimeReport:project/track', array_column($hook->getListeners('template:project:header:after'), 'template'));

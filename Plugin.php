@@ -3,6 +3,8 @@
 namespace Kanboard\Plugin\TimeReport;
 
 use Kanboard\Core\Plugin\Base;
+use Kanboard\Plugin\TimeReport\Api\TimeReportProgressProcedure;
+use Kanboard\Plugin\TimeReport\Api\TimeReportXpProcedure;
 use Kanboard\Plugin\TimeReport\Model\AiGate;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryModel;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
@@ -45,6 +47,10 @@ class Plugin extends Base
 
         // ── Progress/XP bookkeeping: completion stamps + cache invalidation ───
         $this->dispatcher->addSubscriber(new ProgressSubscriber($this->container));
+
+        // ── JSON-RPC (read-only). withObject so core wins any name clash. ─────
+        $this->api->getProcedureHandler()->withObject(new TimeReportProgressProcedure($this->container));
+        $this->api->getProcedureHandler()->withObject(new TimeReportXpProcedure($this->container));
 
         // ── Template helper: $this->helper->timeReport->formatHours(...) ──────
         // (property access — Kanboard's Helper exposes registered helpers via __get, not __call)

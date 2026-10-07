@@ -8,6 +8,22 @@ use Kanboard\Plugin\TimeReport\Model\AiGate;
 
 class PluginTest extends Base
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // The unit container has no JSON-RPC server; initialize() registers procedures on it.
+        $this->container->register(new \Kanboard\ServiceProvider\ApiProvider());
+    }
+
+    public function testInitializeRegistersRpcProcedures(): void
+    {
+        (new Plugin($this->container))->initialize();
+        $handler = $this->container['api']->getProcedureHandler();
+        // Missing objects → false, through core's real handler (before-method checks included).
+        $this->assertFalse($handler->executeProcedure('getTaskProgress', ['task_id' => 99999]));
+        $this->assertFalse($handler->executeProcedure('getXpLeaderboard', ['project_id' => 99999]));
+    }
+
     public function testMetadataVersionIs144(): void
     {
         $plugin = new Plugin($this->container);

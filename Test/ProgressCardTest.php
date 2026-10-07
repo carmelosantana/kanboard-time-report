@@ -61,6 +61,7 @@ class ProgressCardTest extends Base
 
     public function testPluginAttachesFooterHookAndNoOverride(): void
     {
+        $this->container->register(new \Kanboard\ServiceProvider\ApiProvider()); // initialize() registers JSON-RPC procedures
         (new Plugin($this->container))->initialize();
         $hooks = $this->container['hook']->getListeners('template:board:task:footer');
         $this->assertContains('TimeReport:board/progress', array_column($hooks, 'template'));
