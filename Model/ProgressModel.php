@@ -13,6 +13,7 @@ use PDO;
  */
 class ProgressModel extends Base
 {
+    /** Milestones are matched by link label, so an admin renaming this link hides them. */
     public const MILESTONE_LABEL = 'is a milestone of';
 
     public static function pct(int $done, int $total): int
@@ -51,19 +52,19 @@ class ProgressModel extends Base
     public function projectProgress(int $projectId): array
     {
         $counts = $this->db->execute(
-            'SELECT COUNT(*) AS total, SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) AS closed FROM tasks WHERE project_id = ?',
+            'SELECT COUNT(*) AS total, SUM(CASE WHEN is_active = \'0\' THEN 1 ELSE 0 END) AS closed FROM tasks WHERE project_id = ?',
             [$projectId]
         )->fetch(PDO::FETCH_ASSOC);
 
         $rows = $this->db->execute(
             'SELECT m.id AS task_id, m.title, m.date_due,
                     COUNT(mem.id) AS total,
-                    SUM(CASE WHEN mem.is_active = 0 THEN 1 ELSE 0 END) AS closed
+                    SUM(CASE WHEN mem.is_active = \'0\' THEN 1 ELSE 0 END) AS closed
              FROM tasks m
              JOIN task_has_links tl ON tl.task_id = m.id
              JOIN links l ON l.id = tl.link_id AND l.label = ?
              JOIN tasks mem ON mem.id = tl.opposite_task_id AND mem.project_id = m.project_id
-             WHERE m.project_id = ? AND m.is_active = 1
+             WHERE m.project_id = ? AND m.is_active = \'1\'
              GROUP BY m.id, m.title, m.date_due',
             [self::MILESTONE_LABEL, $projectId]
         )->fetchAll(PDO::FETCH_ASSOC);

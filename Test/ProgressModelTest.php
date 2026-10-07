@@ -139,6 +139,16 @@ class ProgressModelTest extends Base
         $this->assertSame(1, $r['total']);
     }
 
+    public function testProjectProgressOmitsMilestoneWhoseOnlyMemberIsForeign(): void
+    {
+        $p = $this->project('A');
+        $ms = $this->task($p);
+        $this->milestone($ms, [$this->task($this->project('B'))]);
+
+        $this->assertSame([], (new ProgressModel($this->container))->projectProgress($p)['milestones']);
+        $this->assertNull((new ProgressModel($this->container))->milestoneProgress($ms));
+    }
+
     public function testMilestoneProgressIsNullForPlainTasks(): void
     {
         $t = $this->task($this->project());
