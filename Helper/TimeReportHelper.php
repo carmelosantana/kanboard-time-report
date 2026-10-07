@@ -40,6 +40,9 @@ class TimeReportHelper extends Base
         $lines[] = '';
         $lines[] = '**Range:** ' . $report['start_date'] . ' → ' . $report['end_date'];
         $lines[] = '**Total hours:** ' . $this->formatHours((float) $report['total_hours']);
+        if (isset($report['xp']['total'])) {
+            $lines[] = '**XP earned:** ' . (int) $report['xp']['total'];
+        }
         $lines[] = '';
 
         if ($isTask) {
@@ -97,6 +100,9 @@ class TimeReportHelper extends Base
         $out[] = $this->csvRow(['# Time Report', $report['project_name']]);
         $out[] = $this->csvRow(['# Range', $report['start_date'], $report['end_date']]);
         $out[] = $this->csvRow(['# Total hours', $this->formatHours((float) $report['total_hours'])]);
+        if (isset($report['xp']['total'])) {
+            $out[] = $this->csvRow(['# XP earned', (string) (int) $report['xp']['total']]);
+        }
         $out[] = '';
 
         // Uniform breakdown header across all granularities (the Tasks count is 1

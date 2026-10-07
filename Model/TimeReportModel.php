@@ -594,6 +594,13 @@ class TimeReportModel extends Base
             ];
         }
 
+        // XP earned in range by the same subject users (spec Kanboard #5380); 2 grouped queries.
+        $xpByUser = (new XpModel($this->container))->byUser($projectId, $startTs, $endTs);
+        $xpUsers  = [];
+        foreach ($subjectIds as $uid) {
+            $xpUsers[(int) $uid] = (int) ($xpByUser[(int) $uid] ?? 0);
+        }
+
         $project = $this->projectModel->getById($projectId);
 
         $report = [
@@ -603,6 +610,7 @@ class TimeReportModel extends Base
             'end_date'          => $endDate,
             'granularity'       => $granularity,
             'total_hours'       => $bucketed['total_hours'],
+            'xp'                => ['users' => $xpUsers, 'total' => array_sum($xpUsers)],
             'breakdown'         => $bucketed['breakdown'],
             'include_detail'    => $includeDetail,
             'detail'            => [],
