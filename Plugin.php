@@ -6,6 +6,11 @@ use Kanboard\Core\Plugin\Base;
 use Kanboard\Plugin\TimeReport\Model\AiGate;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryModel;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
+use Kanboard\Plugin\TimeReport\Model\ProgressModel;
+use Kanboard\Plugin\TimeReport\Model\SubtaskCompletionStamp;
+use Kanboard\Plugin\TimeReport\Model\XpCache;
+use Kanboard\Plugin\TimeReport\Model\XpModel;
+use Kanboard\Plugin\TimeReport\Subscriber\ProgressSubscriber;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
 use Kanboard\Plugin\TimeReport\Helper\TimeReportHelper;
 
@@ -32,6 +37,13 @@ class Plugin extends Base
         $this->container['aiSummaryCache'] = function ($c) {
             return new AiSummaryCache($c);
         };
+        $this->container['progressModel'] = fn ($c) => new ProgressModel($c);
+        $this->container['xpModel'] = fn ($c) => new XpModel($c);
+        $this->container['xpCache'] = fn ($c) => new XpCache($c);
+        $this->container['subtaskCompletionStamp'] = fn ($c) => new SubtaskCompletionStamp($c);
+
+        // ── Progress/XP bookkeeping: completion stamps + cache invalidation ───
+        $this->dispatcher->addSubscriber(new ProgressSubscriber($this->container));
 
         // ── Template helper: $this->helper->timeReport->formatHours(...) ──────
         // (property access — Kanboard's Helper exposes registered helpers via __get, not __call)

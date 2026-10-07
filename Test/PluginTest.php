@@ -76,4 +76,12 @@ class PluginTest extends Base
         );
         $this->assertSame('1.50', $helper->formatHours(1.5), 'helper methods must be callable through the container');
     }
+
+    public function testInitializeRegistersTheProgressSubscriber(): void
+    {
+        (new Plugin($this->container))->initialize();
+        $listeners = $this->container['dispatcher']->getListeners('subtask.update');
+        $found = array_filter($listeners, fn ($l) => is_array($l) && $l[0] instanceof \Kanboard\Plugin\TimeReport\Subscriber\ProgressSubscriber);
+        $this->assertNotEmpty($found);
+    }
 }
