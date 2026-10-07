@@ -55,7 +55,7 @@ class ProgressApi extends Base
             return false;
         }
         $projectId = $projectId === null || $projectId === '' ? null : self::id($projectId);
-        if ($projectId === 0) {
+        if ($projectId === 0 || ($projectId !== null && ! $this->projectModel->exists($projectId))) {
             return false;
         }
         if ($projectId !== null) {
@@ -110,8 +110,10 @@ class ProgressApi extends Base
         if ($projectId !== null) {
             return isset($byProject[$projectId]) ? [$projectId => $byProject[$projectId]] : [];
         }
-        if ($this->userSession->isLogged()) {
-            $visible = array_map('intval', $this->projectPermissionModel->getActiveProjectIds($this->userSession->getId()));
+        // Same rule as assertProject(): admins see all; others every project they
+        // belong to (directly or via a group), closed ones included.
+        if ($this->userSession->isLogged() && ! $this->userSession->isAdmin()) {
+            $visible = array_map('intval', $this->projectPermissionModel->getProjectIds($this->userSession->getId()));
             $byProject = array_intersect_key($byProject, array_flip($visible));
         }
         return $byProject;
@@ -135,16 +137,21 @@ class ProgressApi extends Base
         return is_numeric($value) && (int) $value > 0 ? (int) $value : 0;
     }
 
-    /** @return array{}|array{0:int,1:int}|false  [] = lifetime; false = invalid */
+    /** @return array{}|array{0:int,1:int}|false  [] = lifetime; false = invalid, half-open or reversed */
     private static function range($from, $to)
     {
         if (($from === null || $from === '') && ($to === null || $to === '')) {
             return [];
         }
         foreach ([$from, $to] as $d) {
-            if (! is_string($d) || preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) !== 1 || strtotime($d) === false) {
+            // Round-trip rejects impossible dates such as 2026-02-30.
+            $parsed = is_string($d) ? \DateTime::createFromFormat('!Y-m-d', $d) : false;
+            if ($parsed === false || $parsed->format('Y-m-d') !== $d) {
                 return false;
             }
+        }
+        if ($from > $to) {
+            return false;
         }
         return [(int) strtotime($from . ' 00:00:00'), (int) strtotime($to . ' 23:59:59')];
     }
