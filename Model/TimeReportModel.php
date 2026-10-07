@@ -594,11 +594,19 @@ class TimeReportModel extends Base
             ];
         }
 
-        // XP earned in range by the same subject users (spec Kanboard #5380); 2 grouped queries.
+        // XP earned in range (spec Kanboard #5380); 2 grouped queries. Subject users are
+        // zero-filled; all-users mode also takes everyone who earned XP without being a
+        // participant (e.g. subtask completions only), matching getXpLeaderboard.
         $xpByUser = (new XpModel($this->container))->byUser($projectId, $startTs, $endTs);
         $xpUsers  = [];
         foreach ($subjectIds as $uid) {
             $xpUsers[(int) $uid] = (int) ($xpByUser[(int) $uid] ?? 0);
+        }
+        if ($allUsers && $canReportOthers) {
+            foreach ($xpByUser as $uid => $xp) {
+                $xpUsers[(int) $uid] = (int) $xp;
+            }
+            ksort($xpUsers);
         }
 
         $project = $this->projectModel->getById($projectId);

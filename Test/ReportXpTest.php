@@ -40,6 +40,21 @@ class ReportXpTest extends Base
         $this->assertSame(['users' => [1 => 0], 'total' => 0], $this->report($this->project())['xp']);
     }
 
+    public function testAllUsersModeIncludesXpOnlyUsersButJustMeDoesNot(): void
+    {
+        $p = $this->project();
+        $bob = $this->user('bob');
+        $s = $this->subtask($this->task($p), $bob, 2);
+        $this->container['db']->table('timereport_subtask_completions')->insert(['subtask_id' => $s, 'user_id' => $bob, 'completed_at' => time()]);
+
+        $all = (new TimeReportModel($this->container))->report($p, date('Y-m-01'), date('Y-m-t'), 'task', false, 1, null, true);
+        $this->assertSame(10, $all['xp']['users'][$bob] ?? null);
+        $this->assertSame(10, $all['xp']['total']);
+        $this->assertArrayNotHasKey($bob, $all['users']);   // xp.users only; the subject list is untouched
+
+        $this->assertSame(['users' => [1 => 0], 'total' => 0], $this->report($p)['xp']);
+    }
+
     public function testMarkdownAndCsvShowXp(): void
     {
         $helper = new TimeReportHelper($this->container);
