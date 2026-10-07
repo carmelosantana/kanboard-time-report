@@ -124,6 +124,12 @@ class ProgressApiTest extends Base
         $this->assertFalse($this->xp()->getXpLeaderboard($p, null, '2026-10-31'));
     }
 
+    public function testUserXpEncodesEmptyByProjectAsJsonObject(): void
+    {
+        $json = json_encode($this->xp()->getUserXp($this->user('nobody')));
+        $this->assertStringContainsString('"by_project":{}', $json);
+    }
+
     public function testUserXpHidesInvisibleProjects(): void
     {
         $alice = $this->user('alice');

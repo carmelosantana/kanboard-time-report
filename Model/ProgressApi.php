@@ -63,7 +63,8 @@ class ProgressApi extends Base
         }
 
         $own = $this->xpByProject($userId, $range, $projectId);
-        $out = ['xp' => array_sum($own)] + self::levelOf(array_sum($own)) + ['by_project' => $own];
+        // An empty map must encode as JSON {} (not []) for typed map decoders.
+        $out = ['xp' => array_sum($own)] + self::levelOf(array_sum($own)) + ['by_project' => $own ?: new \stdClass()];
 
         $xpModel = new XpModel($this->container);
         $agents = array_keys(array_filter($xpModel->agentOwnerMap(), fn (int $owner) => $owner === $userId));
