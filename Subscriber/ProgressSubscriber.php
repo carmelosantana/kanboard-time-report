@@ -18,6 +18,7 @@ class ProgressSubscriber extends Base implements EventSubscriberInterface
             SubtaskModel::EVENT_CREATE          => 'onSubtask',
             SubtaskModel::EVENT_UPDATE          => 'onSubtask',
             SubtaskModel::EVENT_DELETE          => 'onChange',
+            TaskModel::EVENT_CREATE             => 'onChange',   // CSV import can create closed tasks
             TaskModel::EVENT_CLOSE              => 'onTaskClose',
             TaskModel::EVENT_OPEN               => 'onChange',
             TaskModel::EVENT_UPDATE             => 'onChange',

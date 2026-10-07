@@ -71,6 +71,18 @@ class XpCacheTest extends Base
         $this->assertSame([$p => 10], (new XpModel($this->container))->deriveUser($alice, $before - 1, time() + 1));
     }
 
+    public function testCreatingAnAlreadyClosedTaskInvalidates(): void
+    {
+        $alice = $this->user('alice');
+        $p = $this->project();
+        $this->assertSame(0, $this->cache()->lifetime($alice)['total']);
+
+        // CSV import's path: task.create only, no task.close.
+        $this->task($p, ['owner_id' => $alice, 'score' => 1, 'is_active' => 0, 'date_completed' => time()]);
+
+        $this->assertSame(35, $this->cache()->lifetime($alice)['total']);
+    }
+
     public function testReassignDoneSubtaskMovesXpAfterInvalidation(): void
     {
         $alice = $this->user('alice');
