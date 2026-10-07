@@ -18,7 +18,7 @@ use Kanboard\Plugin\TimeReport\Helper\TimeReportHelper;
 use Kanboard\Plugin\TimeReport\Helper\ProgressHelper;
 
 /**
- * TimeReport — self-only consultant hours report for one project + date range.
+ * TimeReport — consultant hours reporting and progress (cards, milestones, XP).
  *
  * Pure query→render over the time data itself: the report persists nothing. The
  * optional AI narrative summary is cached in the plugin's own tables (Schema/),
@@ -113,7 +113,7 @@ class Plugin extends Base
 
     public function getPluginDescription(): string
     {
-        return t('Consultant hours reporting: pick a project and date range, choose per-day/per-week/per-task breakdowns, list completed tasks, and optionally add an AI summary. Copy as Markdown or export CSV.');
+        return t('Consultant hours reporting plus progress: subtask and time meters on board cards, project and milestone progress, and XP with levels. Pick a project and date range, choose breakdowns, optionally add an AI summary, copy as Markdown or export CSV.');
     }
 
     public function getPluginAuthor(): string
@@ -123,7 +123,7 @@ class Plugin extends Base
 
     public function getPluginVersion(): string
     {
-        return '1.4.4';
+        return '1.5.0';
     }
 
     public function getPluginHomepage(): string

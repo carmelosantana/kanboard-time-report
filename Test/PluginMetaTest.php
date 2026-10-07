@@ -11,9 +11,9 @@ class PluginMetaTest extends Base
         return json_decode(file_get_contents(dirname(__DIR__) . '/plugin.json'), true);
     }
 
-    public function testVersionIsExactly143(): void
+    public function testVersionIsExactly150(): void
     {
-        $this->assertSame('1.4.4', $this->json()['version']);
+        $this->assertSame('1.5.0', $this->json()['version']);
     }
 
     /** tag == version across the three files the CI checks (plugin.json, Plugin.php, CHANGELOG). */
@@ -45,10 +45,12 @@ class PluginMetaTest extends Base
     public function testRecommendsArrayShape(): void
     {
         $j = $this->json();
-        $this->assertArrayNotHasKey('requires', $j, 'AiConnector must be recommends, never requires');
-        $this->assertSame(['AiConnector'], array_column($j['recommends'], 'plugin'));
-        $this->assertSame('1.0.0', $j['recommends'][0]['min_version'], 'bare semver, no ">=" prefix');
-        $this->assertStringStartsNotWith('>=', $j['recommends'][0]['min_version']);
-        $this->assertNotEmpty($j['recommends'][0]['reason']);
+        $this->assertArrayNotHasKey('requires', $j, 'AiConnector and Agents must be recommends, never requires');
+        $this->assertSame(['AiConnector', 'Agents'], array_column($j['recommends'], 'plugin'));
+        $this->assertSame(['1.0.0', '0.3.0'], array_column($j['recommends'], 'min_version'), 'bare semver, no ">=" prefix');
+        foreach ($j['recommends'] as $dep) {
+            $this->assertStringStartsNotWith('>=', $dep['min_version']);
+            $this->assertNotEmpty($dep['reason']);
+        }
     }
 }
