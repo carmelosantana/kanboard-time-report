@@ -75,6 +75,10 @@ class Plugin extends Base
         // ── Progress on board cards: a hook, never a board/task_footer override ──
         $this->template->hook->attach('template:board:task:footer', 'TimeReport:board/progress');
 
+        // ── Theme-only surfaces (hidden by progress.css; a theme reveals them) ──
+        $this->template->hook->attach('template:project:header:after', 'TimeReport:project/track');
+        $this->template->hook->attach('template:layout:top', 'TimeReport:layout/level');
+
         // ── Assets (CSP-safe: external files, delegated JS) ───────────────────
         $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/timereport.css']);
         $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/progress.css']);

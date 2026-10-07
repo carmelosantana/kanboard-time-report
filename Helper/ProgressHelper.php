@@ -4,6 +4,8 @@ namespace Kanboard\Plugin\TimeReport\Helper;
 
 use Kanboard\Core\Base;
 use Kanboard\Plugin\TimeReport\Model\ProgressModel;
+use Kanboard\Plugin\TimeReport\Model\XpCache;
+use Kanboard\Plugin\TimeReport\Model\XpModel;
 
 /** View-side access to progress data for the contract templates. */
 class ProgressHelper extends Base
@@ -18,5 +20,28 @@ class ProgressHelper extends Base
     {
         $s = number_format(round($x, 2), 2, '.', '');
         return rtrim(rtrim($s, '0'), '.');
+    }
+
+    public function track(int $projectId): ?array
+    {
+        $p = (new ProgressModel($this->container))->projectProgress($projectId);
+        return $p['total'] > 0 ? $p : null;
+    }
+
+    public function level(): ?array
+    {
+        if (! $this->userSession->isLogged()) {
+            return null;
+        }
+        $userId = (int) $this->userSession->getId();
+        $xp = (new XpCache($this->container))->lifetime($userId);
+
+        return [
+            'user_id'  => $userId,
+            'level'    => XpModel::levelFor($xp['total']),
+            'xp'       => $xp['total'],
+            'next'     => XpModel::nextFor($xp['total']),
+            'party_xp' => $xp['party_xp'],
+        ];
     }
 }
