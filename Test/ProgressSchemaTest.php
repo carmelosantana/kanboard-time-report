@@ -86,6 +86,20 @@ class ProgressSchemaTest extends Base
         $this->assertNull($this->stamp($doing));
     }
 
+    public function testBackfillStampsUnassignedSubtaskAsUserZero(): void
+    {
+        require_once dirname(__DIR__) . '/Schema/Sqlite.php';
+        $pdo = $this->container['db']->getConnection();
+        \Kanboard\Plugin\TimeReport\Schema\version_1($pdo);
+
+        $s = $this->subtask($this->task($this->project()), 1, 2);
+        $pdo->exec('UPDATE subtasks SET user_id = NULL WHERE id = ' . $s);
+
+        \Kanboard\Plugin\TimeReport\Schema\version_2($pdo);
+
+        $this->assertSame(0, (int) $this->stamp($s)['user_id']);
+    }
+
     public function testStampCascadesWithSubtask(): void
     {
         $this->createProgressSchema();

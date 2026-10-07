@@ -115,7 +115,7 @@ function backfill_subtask_completions(PDO $pdo)
 {
     $pdo->exec("
         INSERT INTO timereport_subtask_completions (subtask_id, user_id, completed_at)
-        SELECT s.id, s.user_id,
+        SELECT s.id, COALESCE(s.user_id, 0),
                COALESCE(
                    (SELECT MAX(stt.end) FROM subtask_time_tracking stt WHERE stt.subtask_id = s.id AND stt.end > 0),
                    NULLIF(t.date_completed, 0),
