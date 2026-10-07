@@ -4,7 +4,7 @@ namespace Kanboard\Plugin\TimeReport\Schema;
 
 use PDO;
 
-const VERSION = 1;
+const VERSION = 2;
 
 /**
  * Move the AI summary caches out of the metadata tables.
@@ -69,4 +69,61 @@ function drop_legacy_metadata_cache(PDO $pdo)
 {
     $pdo->exec("DELETE FROM task_has_metadata WHERE name = 'timereport_ai_summary'");
     $pdo->exec("DELETE FROM project_has_metadata WHERE name = 'timereport_ai_agg'");
+}
+
+/**
+ * Progress + XP (1.5.0, spec Kanboard #5379/#5383).
+ *
+ * Core subtasks carry no completion time, so date-range XP needs a stamp per
+ * done subtask. The stamp only DATES XP; amounts are always derived from the
+ * live subtask/task rows. The XP cache holds lifetime XP per user per project;
+ * project_id 0 is the per-user marker row (xp = lifetime total, party_xp = own +
+ * agents' total, NULL when the user has no agents). It is fully disposable.
+ */
+function version_2(PDO $pdo)
+{
+    $pdo->exec("
+        CREATE TABLE timereport_subtask_completions (
+            subtask_id INT NOT NULL,
+            user_id INT NOT NULL DEFAULT 0,
+            completed_at INT NOT NULL DEFAULT 0,
+            PRIMARY KEY(subtask_id),
+            FOREIGN KEY(subtask_id) REFERENCES subtasks(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB CHARSET=utf8mb4
+    ");
+    $pdo->exec('CREATE INDEX timereport_subtask_completions_at_idx ON timereport_subtask_completions(completed_at)');
+
+    $pdo->exec("
+        CREATE TABLE timereport_xp_cache (
+            user_id INT NOT NULL,
+            project_id INT NOT NULL,
+            xp INT NOT NULL DEFAULT 0,
+            party_xp INT NULL,
+            computed_at INT NOT NULL DEFAULT 0,
+            PRIMARY KEY(user_id, project_id)
+        ) ENGINE=InnoDB CHARSET=utf8mb4
+    ");
+
+    backfill_subtask_completions($pdo);
+}
+
+/**
+ * Date every already-done subtask: last timer end, else the parent task's
+ * completion date, else its last modification. Best effort by design.
+ */
+function backfill_subtask_completions(PDO $pdo)
+{
+    $pdo->exec("
+        INSERT INTO timereport_subtask_completions (subtask_id, user_id, completed_at)
+        SELECT s.id, s.user_id,
+               COALESCE(
+                   (SELECT MAX(stt.`end`) FROM subtask_time_tracking stt WHERE stt.subtask_id = s.id AND stt.`end` > 0),
+                   NULLIF(t.date_completed, 0),
+                   t.date_modification,
+                   0
+               )
+        FROM subtasks s
+        JOIN tasks t ON t.id = s.task_id
+        WHERE s.status = 2
+    ");
 }
