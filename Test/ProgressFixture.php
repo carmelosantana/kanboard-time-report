@@ -38,7 +38,7 @@ trait ProgressFixture
 
     private function task(int $projectId, array $extra = []): int
     {
-        return (int) $this->container['taskCreationModel']->create(['title' => 'T', 'project_id' => $projectId] + $extra);
+        return (int) $this->container['taskCreationModel']->create(['project_id' => $projectId] + $extra + ['title' => 'T']);
     }
 
     private function subtask(int $taskId, int $userId = 0, int $status = 0): int
