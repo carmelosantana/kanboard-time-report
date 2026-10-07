@@ -31,13 +31,16 @@ rendered reference.
 
 - The subtask attributes and `.tr-progress__bar` appear only when the task has subtasks.
 - The time attributes and `.tr-progress__time` appear only when the task has an estimate. `data-tr-time-state` is `ok` or `over`; the width is capped at 100%.
+- `.tr-progress__time` carries the modifier `.tr-progress__time--ok` or `.tr-progress__time--over`, mirroring `data-tr-time-state`.
 - A task with neither renders nothing.
 
 ## Pass track
 
 `section.tr-track[data-tr-contract][data-tr-project][data-tr-project-pct]` contains `.tr-track__project`
 (`--tr-pct`, `.tr-track__fill`, `.tr-track__count`) and `ol.tr-track__milestones` > `li.tr-track__milestone`
-with `data-tr-milestone`, `data-tr-pct`, `data-tr-due` (`Y-m-d`, or empty when undated) and `data-tr-state="open"`.
+with `data-tr-milestone`, `data-tr-pct`, `data-tr-due` (`Y-m-d`, or empty when undated), `data-tr-state="open"`
+and its own `--tr-pct`; each milestone contains `.tr-track__title` (the milestone task's title) and `.tr-track__count`
+(closed/total member tasks).
 It holds open milestones (core "is a milestone of" links), dated first by due date, then undated by id.
 A project with no tasks renders nothing.
 

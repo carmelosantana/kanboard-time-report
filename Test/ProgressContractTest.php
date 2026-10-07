@@ -112,6 +112,31 @@ class ProgressContractTest extends Base
         $this->assertContains('TimeReport:layout/level', array_column($hook->getListeners('template:layout:top'), 'template'));
     }
 
+    public function testTrackEscapesMilestoneTitles(): void
+    {
+        $p = $this->project('Esc');
+        $ms = $this->task($p, ['title' => '<b>x</b>"']);
+        $this->milestone($ms, [$this->task($p)]);
+        $html = $this->tpl('TimeReport:project/track', ['project' => ['id' => $p]]);
+
+        $this->assertStringContainsString('&lt;b&gt;x&lt;/b&gt;&quot;', $html);
+        $this->assertStringNotContainsString('<b>x</b>', $html);
+    }
+
+    /** Every class, data attribute and custom property a template emits is documented. */
+    public function testContractDocCoversEveryTemplateToken(): void
+    {
+        $root = dirname(__DIR__);
+        $doc = file_get_contents($root . '/docs/progress-contract.md');
+        foreach (['board/progress.php', 'project/track.php', 'layout/level.php'] as $f) {
+            $src = file_get_contents($root . '/Template/' . $f);
+            preg_match_all('/(?<![\w-])(?:data-tr-[a-z-]*[a-z]|tr-[a-z0-9_-]*[a-z0-9]|--tr-[a-z-]*[a-z])/', $src, $m);
+            foreach (array_unique($m[0]) as $token) {
+                $this->assertStringContainsString($token, $doc, "$f emits $token, which docs/progress-contract.md does not document");
+            }
+        }
+    }
+
     /**
      * The rendered contract, frozen. Battle Lobby's tests read this file.
      * Regenerate deliberately with TR_UPDATE_FIXTURE=1, and only for ADDITIVE changes.

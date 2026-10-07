@@ -4,7 +4,6 @@ namespace Kanboard\Plugin\TimeReport\Helper;
 
 use Kanboard\Core\Base;
 use Kanboard\Plugin\TimeReport\Model\ProgressModel;
-use Kanboard\Plugin\TimeReport\Model\XpCache;
 use Kanboard\Plugin\TimeReport\Model\XpModel;
 
 /** View-side access to progress data for the contract templates. */
@@ -34,7 +33,7 @@ class ProgressHelper extends Base
             return null;
         }
         $userId = (int) $this->userSession->getId();
-        $xp = (new XpCache($this->container))->lifetime($userId);
+        $xp = $this->container['xpCache']->lifetime($userId);
 
         return [
             'user_id'  => $userId,
