@@ -1,0 +1,16 @@
+/* TimeReport progress — theme contract v1 (docs/progress-contract.md). Themes restyle freely. */
+.tr-progress { display: grid; gap: 3px; margin: 4px 0 2px; }
+.tr-progress__bar { position: relative; height: 16px; border-radius: 4px; overflow: hidden; background: rgba(130, 130, 130, 0.18); }
+.tr-progress__bar .tr-progress__fill { position: absolute; inset: 0 auto 0 0; width: var(--tr-pct, 0%); background: #5cb85c; }
+.tr-progress__bar .tr-progress__label { position: relative; display: block; padding: 0 4px; font-size: 0.8em; line-height: 16px; color: #333; }
+.tr-progress__time { display: flex; align-items: center; gap: 4px; font-size: 0.75em; color: #666; }
+.tr-progress__track { position: relative; flex: 1; height: 5px; border-radius: 3px; overflow: hidden; background: rgba(130, 130, 130, 0.18); }
+.tr-progress__time .tr-progress__fill { position: absolute; inset: 0 auto 0 0; width: var(--tr-pct, 0%); background: #4b9fd5; }
+.tr-progress__time--over .tr-progress__fill { background: #d9534f; }
+.tr-progress__time--over .tr-progress__label { color: #b94a48; font-weight: bold; }
+
+/* Theme-only surfaces: emitted for themes, hidden in the stock UI (spec Kanboard #5380). */
+.tr-track, .tr-level { display: none; }
+
+/* TaskProgressBar coexistence (spec Kanboard #5382): one bar per card while both are installed. */
+.container-task-progress-bar { display: none; }

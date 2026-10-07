@@ -13,6 +13,7 @@ use Kanboard\Plugin\TimeReport\Model\XpModel;
 use Kanboard\Plugin\TimeReport\Subscriber\ProgressSubscriber;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
 use Kanboard\Plugin\TimeReport\Helper\TimeReportHelper;
+use Kanboard\Plugin\TimeReport\Helper\ProgressHelper;
 
 /**
  * TimeReport — self-only consultant hours report for one project + date range.
@@ -48,6 +49,7 @@ class Plugin extends Base
         // ── Template helper: $this->helper->timeReport->formatHours(...) ──────
         // (property access — Kanboard's Helper exposes registered helpers via __get, not __call)
         $this->helper->register('timeReport', TimeReportHelper::class);
+        $this->helper->register('timeReportProgress', ProgressHelper::class);
 
         // ── AI availability gate (single source of truth) ─────────────────────
         $this->aiEnabled = AiGate::isReady($this->container);
@@ -70,8 +72,12 @@ class Plugin extends Base
         // provider. Persisted via core ConfigController::save (redirect=integrations).
         $this->template->hook->attach('template:config:integrations', 'TimeReport:config/integrations');
 
+        // ── Progress on board cards: a hook, never a board/task_footer override ──
+        $this->template->hook->attach('template:board:task:footer', 'TimeReport:board/progress');
+
         // ── Assets (CSP-safe: external files, delegated JS) ───────────────────
         $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/timereport.css']);
+        $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/progress.css']);
         $this->hook->on('template:layout:js', ['template' => 'plugins/TimeReport/Assets/js/timereport.js']);
     }
 
