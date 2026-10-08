@@ -41,6 +41,46 @@ When you add an AI summary, TimeReport sends the configured [AiConnector](https:
 
 **Comments are never sent.** No data is sent to any provider unless you explicitly request an AI summary, and nothing is sent at all when AiConnector is absent or unconfigured.
 
+## Progress and XP
+
+Board cards show a **subtask completion bar** (done/total) and, when the task has an estimate, a thin **time-vs-estimate meter** that turns red on overrun. Both render through the `template:board:task:footer` hook; no core template is overridden. A task with neither subtasks nor an estimate shows nothing.
+
+TimeReport also tracks **project progress**, **milestone progress** (tasks linked with core's "is a milestone of" link) and **XP with levels**. The pass track and level badge are emitted hidden in the stock UI so themes can restyle them; see [`docs/progress-contract.md`](docs/progress-contract.md) for the theme contract (classes and `data-tr-*` attributes).
+
+### XP rules
+
+| Event | XP |
+|---|---|
+| Subtask completed | 10 to its assignee |
+| Task closed | 25 + 10 × complexity to its assignee |
+
+Level L starts at **50·L·(L−1)** XP (level 2 at 100, level 3 at 300, level 4 at 600). Unassigned work earns no XP. With the **Agents** plugin installed, an agent's XP also rolls into its owner's party total. The report shows XP earned in the selected range alongside hours (control bar, Markdown and CSV).
+
+### JSON-RPC
+
+All read-only and checked against the caller's project permissions.
+
+| Method | Returns |
+|---|---|
+| `getTaskProgress(task_id)` | One task's subtask and time meters. |
+| `getProjectProgress(project_id)` | A project's closed/total tasks, percentage and its milestones. |
+| `getMilestoneProgress(task_id)` | A milestone task's progress over the tasks linked to it. |
+| `getUserXp(user_id, project_id?, from?, to?)` | A user's XP and level (lifetime, or for a project/date range), per project, plus a party total when they own agents. |
+| `getXpLeaderboard(project_id, from?, to?)` | XP per user on a project, highest first. |
+
+Deleting a task, project or user fires no core event, so cached lifetime XP refreshes on the next task or subtask event.
+
+### Replacing TaskProgressBar
+
+TimeReport's card meters replace the third-party TaskProgressBar plugin. While both are installed, TaskProgressBar's bar is hidden so each card shows one bar, and admins see a notice (dismissible per user).
+
+1. Deploy TimeReport 1.5.0.
+2. Open a board and check the cards show TimeReport's meters.
+3. Delete `plugins/TaskProgressBar`.
+4. Confirm the admin notice is gone.
+
+To roll back, restore the `plugins/TaskProgressBar` folder.
+
 ## License
 
 MIT. See LICENSE for details.

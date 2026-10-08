@@ -1,12 +1,15 @@
 <?php
 
 require_once 'tests/units/Base.php';
+require_once __DIR__ . '/ProgressFixture.php';
 
 use KanboardTests\units\Base;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
 
 class TimeReportModelTest extends Base
 {
+    use ProgressFixture;
+
     // Range: 2026-03-01 00:00:00 .. 2026-03-31 23:59:59
     private int $startTs;
     private int $endTs;
@@ -14,6 +17,7 @@ class TimeReportModelTest extends Base
     protected function setUp(): void
     {
         parent::setUp();
+        $this->createProgressSchema();   // report() reads the XP tables (version_2)
         $this->startTs = strtotime('2026-03-01 00:00:00');
         $this->endTs   = strtotime('2026-03-31 23:59:59');
     }

@@ -8,11 +8,27 @@ use Kanboard\Plugin\TimeReport\Model\AiGate;
 
 class PluginTest extends Base
 {
-    public function testMetadataVersionIs144(): void
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // The unit container has no JSON-RPC server; initialize() registers procedures on it.
+        $this->container->register(new \Kanboard\ServiceProvider\ApiProvider());
+    }
+
+    public function testInitializeRegistersRpcProcedures(): void
+    {
+        (new Plugin($this->container))->initialize();
+        $handler = $this->container['api']->getProcedureHandler();
+        // Missing objects → false, through core's real handler (before-method checks included).
+        $this->assertFalse($handler->executeProcedure('getTaskProgress', ['task_id' => 99999]));
+        $this->assertFalse($handler->executeProcedure('getXpLeaderboard', ['project_id' => 99999]));
+    }
+
+    public function testMetadataVersionIs150(): void
     {
         $plugin = new Plugin($this->container);
         $this->assertSame('TimeReport', $plugin->getPluginName());
-        $this->assertSame('1.4.4', $plugin->getPluginVersion());
+        $this->assertSame('1.5.0', $plugin->getPluginVersion());
         $this->assertSame('Carmelo Santana', $plugin->getPluginAuthor());
         $this->assertSame('>=1.2.47', $plugin->getCompatibleVersion());
         $this->assertNotEmpty($plugin->getPluginDescription());
@@ -24,7 +40,21 @@ class PluginTest extends Base
         $json = json_decode(file_get_contents(dirname(__DIR__) . '/plugin.json'), true);
         $plugin = new Plugin($this->container);
         $this->assertSame($json['version'], $plugin->getPluginVersion(), 'Plugin.php version must equal plugin.json version');
-        $this->assertSame('1.4.4', $json['version']);
+        $this->assertSame('1.5.0', $json['version']);
+    }
+
+    public function testPluginJsonRecommendsAgentsForPartyXp(): void
+    {
+        $json = json_decode(file_get_contents(dirname(__DIR__) . '/plugin.json'), true);
+        $names = array_column($json['recommends'], 'plugin');
+        $this->assertContains('AiConnector', $names);
+        $this->assertContains('Agents', $names);
+    }
+
+    public function testChangelogHeadsWithThisVersion(): void
+    {
+        $changelog = file_get_contents(dirname(__DIR__) . '/CHANGELOG.md');
+        $this->assertMatchesRegularExpression('/^## 1\.5\.0 — \d{4}-\d{2}-\d{2}$/m', $changelog);
     }
 
     public function testPhpGate(): void
@@ -75,5 +105,13 @@ class PluginTest extends Base
             'timeReport helper must be registered on the Helper container'
         );
         $this->assertSame('1.50', $helper->formatHours(1.5), 'helper methods must be callable through the container');
+    }
+
+    public function testInitializeRegistersTheProgressSubscriber(): void
+    {
+        (new Plugin($this->container))->initialize();
+        $listeners = $this->container['dispatcher']->getListeners('subtask.update');
+        $found = array_filter($listeners, fn ($l) => is_array($l) && $l[0] instanceof \Kanboard\Plugin\TimeReport\Subscriber\ProgressSubscriber);
+        $this->assertNotEmpty($found);
     }
 }

@@ -2,6 +2,7 @@
 
 require_once 'tests/units/Base.php';
 require_once __DIR__ . '/SummarySchemaHelper.php';
+require_once __DIR__ . '/ProgressFixture.php';
 
 use KanboardTests\units\Base;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
@@ -18,6 +19,7 @@ use Kanboard\Plugin\TimeReport\Controller\TimeReportController;
 class RowSummaryEndpointTest extends Base
 {
     use SummarySchemaHelper;
+    use ProgressFixture;
 
     private int $taskCalls = 0;
     private int $aggCalls = 0;
@@ -28,6 +30,7 @@ class RowSummaryEndpointTest extends Base
     {
         parent::setUp();
         $this->createSummarySchema();
+        $this->createProgressSchema();   // report() reads the XP tables (version_2)
         // The endpoint reads the current user from the session; log in as user 1 (admin),
         // the owner of every project seeded below, so assertProjectAccess passes.
         $_SESSION['user'] = ['id' => 1, 'role' => 'app-admin'];

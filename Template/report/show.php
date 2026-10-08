@@ -37,6 +37,10 @@ $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']
             <?php if (! empty($ai_enabled)): ?>&nbsp;·&nbsp; <span class="tr-controlbar-ai">+AI</span><?php endif ?>
             &nbsp;·&nbsp; <strong><?= t('Total hours') ?>:</strong>
             <span class="tr-copy-num" data-tr-copyval="<?= $this->text->e($trTotal) ?>" data-tr-copied="<?= t('Copied') ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= $this->text->e($trTotal) ?></span>
+            <?php if (isset($report['xp']['total'])): ?>
+            &nbsp;·&nbsp; <strong><?= t('XP') ?>:</strong>
+            <span class="tr-copy-num" data-tr-copyval="<?= (int) $report['xp']['total'] ?>" data-tr-copied="<?= t('Copied') ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= (int) $report['xp']['total'] ?></span>
+            <?php endif ?>
         </span>
         <button type="button" class="btn tr-edit-filters" data-tr-edit-filters aria-expanded="false"><?= t('Edit filters') ?></button>
     </div>

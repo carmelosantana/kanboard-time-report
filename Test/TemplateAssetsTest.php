@@ -16,7 +16,7 @@ class TemplateAssetsTest extends Base
         $templates = [
             'report/form.php', 'report/show.php', 'report/_breakdown.php', 'report/_detail.php',
             'report/header_dropdown.php', 'report/_untracked.php', 'report/_users.php',
-            'config/integrations.php',
+            'config/integrations.php', 'board/progress.php', 'project/track.php', 'layout/level.php', 'config/tpb_notice.php',
         ];
         foreach ($templates as $f) {
             $src = file_get_contents(dirname(__DIR__) . '/Template/' . $f);

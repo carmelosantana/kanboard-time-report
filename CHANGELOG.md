@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.0 — 2026-10-07
+
+### Added
+- Progress on board cards: a subtask completion bar plus a thin time-vs-estimate meter (overrun shows in red), rendered through the `template:board:task:footer` hook. Replaces the third-party TaskProgressBar plugin.
+- Project and milestone progress (core "is a milestone of" links) and XP with levels: completed subtask 10 XP, closed task 25 + 10 × complexity, level L at 50·L·(L−1). Agents' XP rolls into their owner's party total when the Agents plugin is installed.
+- XP earned in range shown in the report's control bar, Markdown and CSV.
+- Theme contract v1 (`docs/progress-contract.md`): `.tr-progress`, `.tr-track`, `.tr-level` with `data-tr-*` attributes. The pass track and level badge are emitted hidden for themes such as Battle Lobby.
+- JSON-RPC: `getTaskProgress`, `getProjectProgress`, `getMilestoneProgress`, `getUserXp`, `getXpLeaderboard` (read-only, project-permission checked).
+- Admins see a dismissible notice while TaskProgressBar is still installed; its bar is hidden so cards show one bar.
+
+### Changed
+- Schema version 2: `timereport_subtask_completions` (backfilled from timer ends or task dates) and `timereport_xp_cache`.
+
 ## 1.4.4 — 2026-09-21
 
 ### Fixed

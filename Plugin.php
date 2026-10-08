@@ -3,14 +3,22 @@
 namespace Kanboard\Plugin\TimeReport;
 
 use Kanboard\Core\Plugin\Base;
+use Kanboard\Plugin\TimeReport\Api\TimeReportProgressProcedure;
+use Kanboard\Plugin\TimeReport\Api\TimeReportXpProcedure;
 use Kanboard\Plugin\TimeReport\Model\AiGate;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryModel;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
+use Kanboard\Plugin\TimeReport\Model\ProgressModel;
+use Kanboard\Plugin\TimeReport\Model\SubtaskCompletionStamp;
+use Kanboard\Plugin\TimeReport\Model\XpCache;
+use Kanboard\Plugin\TimeReport\Model\XpModel;
+use Kanboard\Plugin\TimeReport\Subscriber\ProgressSubscriber;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
 use Kanboard\Plugin\TimeReport\Helper\TimeReportHelper;
+use Kanboard\Plugin\TimeReport\Helper\ProgressHelper;
 
 /**
- * TimeReport — self-only consultant hours report for one project + date range.
+ * TimeReport — consultant hours reporting and progress (cards, milestones, XP).
  *
  * Pure query→render over the time data itself: the report persists nothing. The
  * optional AI narrative summary is cached in the plugin's own tables (Schema/),
@@ -32,10 +40,22 @@ class Plugin extends Base
         $this->container['aiSummaryCache'] = function ($c) {
             return new AiSummaryCache($c);
         };
+        $this->container['progressModel'] = fn ($c) => new ProgressModel($c);
+        $this->container['xpModel'] = fn ($c) => new XpModel($c);
+        $this->container['xpCache'] = fn ($c) => new XpCache($c);
+        $this->container['subtaskCompletionStamp'] = fn ($c) => new SubtaskCompletionStamp($c);
+
+        // ── Progress/XP bookkeeping: completion stamps + cache invalidation ───
+        $this->dispatcher->addSubscriber(new ProgressSubscriber($this->container));
+
+        // ── JSON-RPC (read-only). withObject so core wins any name clash. ─────
+        $this->api->getProcedureHandler()->withObject(new TimeReportProgressProcedure($this->container));
+        $this->api->getProcedureHandler()->withObject(new TimeReportXpProcedure($this->container));
 
         // ── Template helper: $this->helper->timeReport->formatHours(...) ──────
         // (property access — Kanboard's Helper exposes registered helpers via __get, not __call)
         $this->helper->register('timeReport', TimeReportHelper::class);
+        $this->helper->register('timeReportProgress', ProgressHelper::class);
 
         // ── AI availability gate (single source of truth) ─────────────────────
         $this->aiEnabled = AiGate::isReady($this->container);
@@ -46,6 +66,7 @@ class Plugin extends Base
         $this->route->addRoute('timereport/export-csv', 'TimeReportController', 'exportCsv', 'TimeReport');
         $this->route->addRoute('timereport/view', 'TimeReportController', 'view', 'TimeReport');
         $this->route->addRoute('timereport/row-summary', 'TimeReportController', 'rowSummary', 'TimeReport');
+        $this->route->addRoute('timereport/tpb-dismiss', 'TimeReportController', 'dismissTpbNotice', 'TimeReport');
 
         // ── Entry-point link in the header user dropdown ──────────────────────
         $this->template->hook->attach('template:header:dropdown', 'TimeReport:report/header_dropdown');
@@ -58,8 +79,19 @@ class Plugin extends Base
         // provider. Persisted via core ConfigController::save (redirect=integrations).
         $this->template->hook->attach('template:config:integrations', 'TimeReport:config/integrations');
 
+        // ── Progress on board cards: a hook, never a board/task_footer override ──
+        $this->template->hook->attach('template:board:task:footer', 'TimeReport:board/progress');
+
+        // ── Theme-only surfaces (hidden by progress.css; a theme reveals them) ──
+        $this->template->hook->attach('template:project:header:after', 'TimeReport:project/track');
+        $this->template->hook->attach('template:layout:top', 'TimeReport:layout/level');
+
+        // ── Admin notice while TaskProgressBar is loaded (spec Kanboard #5382; visible, not theme-gated) ──
+        $this->template->hook->attach('template:layout:top', 'TimeReport:config/tpb_notice');
+
         // ── Assets (CSP-safe: external files, delegated JS) ───────────────────
         $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/timereport.css']);
+        $this->hook->on('template:layout:css', ['template' => 'plugins/TimeReport/Assets/css/progress.css']);
         $this->hook->on('template:layout:js', ['template' => 'plugins/TimeReport/Assets/js/timereport.js']);
     }
 
@@ -81,7 +113,7 @@ class Plugin extends Base
 
     public function getPluginDescription(): string
     {
-        return t('Consultant hours reporting: pick a project and date range, choose per-day/per-week/per-task breakdowns, list completed tasks, and optionally add an AI summary. Copy as Markdown or export CSV.');
+        return t('Consultant hours reporting plus progress: subtask and time meters on board cards, project and milestone progress, and XP with levels. Pick a project and date range, choose breakdowns, optionally add an AI summary, copy as Markdown or export CSV.');
     }
 
     public function getPluginAuthor(): string
@@ -91,7 +123,7 @@ class Plugin extends Base
 
     public function getPluginVersion(): string
     {
-        return '1.4.4';
+        return '1.5.0';
     }
 
     public function getPluginHomepage(): string

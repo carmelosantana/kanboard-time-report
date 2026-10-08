@@ -1,6 +1,7 @@
 <?php
 
 require_once 'tests/units/Base.php';
+require_once __DIR__ . '/ProgressFixture.php';
 
 use KanboardTests\units\Base;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
@@ -11,6 +12,14 @@ use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
  */
 class DescriptionsOptInTest extends Base
 {
+    use ProgressFixture;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->createProgressSchema();   // report() reads the XP tables (version_2)
+    }
+
     private function seedSetting(string $option, string $value): void
     {
         $db = $this->container['db'];

@@ -1,11 +1,20 @@
 <?php
 
 require_once 'tests/units/Base.php';
+require_once __DIR__ . '/ProgressFixture.php';
 
 use KanboardTests\units\Base;
 
 class TimeReportControllerTest extends Base
 {
+    use ProgressFixture;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->createProgressSchema();   // report() reads the XP tables (version_2)
+    }
+
     private function source(): string
     {
         return file_get_contents(dirname(__DIR__) . '/Controller/TimeReportController.php');
