@@ -152,4 +152,25 @@ class ManualTimeReportTest extends Base
         $this->assertSame(2.0, $report['manual_hours']);
         $this->assertSame(0.0, $report['tracked_hours']);
     }
+
+    /**
+     * A task completed with only undated manual time is reported on its completion
+     * date. Dating NEW time on it later must not take those hours out of the earlier
+     * period — that period may already be invoiced.
+     */
+    public function testDatingNewTimeLeavesAnEarlierPeriodsCompletedTaskHoursAlone(): void
+    {
+        $this->manual(5.0, '');
+        $this->container['db']->table('tasks')->eq('id', $this->taskId)->update([
+            'time_spent' => 5.0, 'is_active' => 0, 'date_completed' => strtotime('2026-03-15 12:00:00'),
+        ]);
+        $this->assertSame(5.0, $this->report()['total_hours'], 'before any dated entry');
+
+        $this->manual(1.0, '2026-04-05 10:00:00');
+        $this->container['db']->table('tasks')->eq('id', $this->taskId)->update(['time_spent' => 6.0]);
+
+        $this->assertSame(5.0, $this->report()['total_hours'], 'March keeps its 5h');
+        $this->assertSame(1.0, $this->report('day', '2026-04-01', '2026-04-30')['total_hours'], 'April gets only the new hour');
+        $this->assertSame(6.0, $this->report('day', '2026-03-01', '2026-04-30')['total_hours'], 'nothing counted twice');
+    }
 }
