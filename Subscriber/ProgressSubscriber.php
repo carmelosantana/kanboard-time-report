@@ -36,7 +36,13 @@ class ProgressSubscriber extends Base implements EventSubscriberInterface
 
             // Timer stops fire no subtask event in core, so a time change seen here was typed.
             $typedBy = $this->userSession->isLogged() ? (int) $this->userSession->getId() : (int) $subtask['user_id'];
-            (new ManualTimeLog($this->container))->sync((int) $subtask['id'], $typedBy);
+            try {
+                (new ManualTimeLog($this->container))->sync((int) $subtask['id'], $typedBy);
+            } catch (\Throwable $e) {
+                // Bookkeeping must never fail the user's save. The ledger reconciles
+                // against the subtask total on the next event for this subtask.
+                $this->logger->error('TimeReport: manual time ledger not updated for subtask ' . (int) $subtask['id'] . ': ' . $e->getMessage());
+            }
         }
         $this->onChange($event);
     }

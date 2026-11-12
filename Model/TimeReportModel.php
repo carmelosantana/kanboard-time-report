@@ -73,9 +73,15 @@ class TimeReportModel extends Base
      * the day they were typed. Every contribution carries a 'source': 'tracked' for
      * timer rows, 'manual' for ledger entries and for the task-level fallback.
      *
+     * $datedManualByTask is each task's dated manual time over ALL time and all users.
+     * It is taken off the task-level fallback rather than switching the fallback off:
+     * a completed task keeps reporting its undated hours on its completion date, and
+     * hours dated later are counted once, on their own day. Suppressing the whole
+     * fallback instead would pull hours out of a period that may already be invoiced.
+     *
      * @return array{0: list<array{task_id:int,hours:float,date:string,user_id:int,source:string}>, 1: array<int,bool>}
      */
-    public static function buildContributions(array $subtaskRows, array $taskRows, int $startTs, int $endTs, int $projectId, array $userIds, array $suppressedTaskIds = [], array $manualRows = []): array
+    public static function buildContributions(array $subtaskRows, array $taskRows, int $startTs, int $endTs, int $projectId, array $userIds, array $suppressedTaskIds = [], array $manualRows = [], array $datedManualByTask = []): array
     {
         $contributions = [];
         $suppressed    = $suppressedTaskIds;
@@ -126,15 +132,12 @@ class TimeReportModel extends Base
                 continue;
             }
 
-            $taskId = (int) $row['task_id'];
-            $suppressed[$taskId] = true;
-
             if (! isset($selected[(int) $row['user_id']])) {
                 continue;
             }
 
             $contributions[] = [
-                'task_id' => $taskId,
+                'task_id' => (int) $row['task_id'],
                 'hours'   => $hours,
                 'date'    => date('Y-m-d', $enteredAt),
                 'user_id' => (int) $row['user_id'],
@@ -148,7 +151,7 @@ class TimeReportModel extends Base
             if ((int) $task['project_id'] !== $projectId || $ownerId <= 0 || ! isset($selected[$ownerId])) {
                 continue;
             }
-            $timeSpent = (float) $task['time_spent'];
+            $timeSpent = round((float) $task['time_spent'] - (float) ($datedManualByTask[(int) $task['id']] ?? 0.0), 2);
             if ($timeSpent <= 0) {
                 continue;
             }
@@ -474,13 +477,14 @@ class TimeReportModel extends Base
         $subtaskRows = $this->gatherSubtaskRows($projectId, $startTs, $endTs);
         $taskRows    = $this->gatherRangeTaskRows($projectId, $startTs, $endTs);
         $manualRows  = $this->gatherManualRows($projectId, $startTs, $endTs);
-        $suppressed  = $this->gatherSuppressedTaskIds($projectId);
+        $suppressed  = self::suppressedTaskIdsFromRows($this->gatherSuppressionRows($projectId));
+        $datedManual = $this->gatherDatedManualByTask($projectId);
 
         $ids = $this->canReportOnOthers($projectId, $requestingUserId)
             ? self::allUserIds(array_merge($subtaskRows, $manualRows), $taskRows)
             : [$requestingUserId];
 
-        return $this->buildParticipants($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $ids, $suppressed, $manualRows);
+        return $this->buildParticipants($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $ids, $suppressed, $manualRows, $datedManual);
     }
 
     /**
@@ -492,9 +496,9 @@ class TimeReportModel extends Base
      *
      * @return array<int, array{name:string, hours:float}>
      */
-    private function buildParticipants(array $subtaskRows, array $taskRows, int $startTs, int $endTs, int $projectId, array $userIds, array $suppressedTaskIds, array $manualRows): array
+    private function buildParticipants(array $subtaskRows, array $taskRows, int $startTs, int $endTs, int $projectId, array $userIds, array $suppressedTaskIds, array $manualRows, array $datedManualByTask): array
     {
-        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $userIds, $suppressedTaskIds, $manualRows);
+        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $userIds, $suppressedTaskIds, $manualRows, $datedManualByTask);
 
         $hours = self::hoursByUser($contributions);
         $names = $this->userNames(array_keys($hours));
@@ -594,13 +598,14 @@ class TimeReportModel extends Base
         $subtaskRows = $this->gatherSubtaskRows($projectId, $startTs, $endTs);
         $taskRows    = $this->gatherRangeTaskRows($projectId, $startTs, $endTs, $includeDetail && $this->sendDescriptionsEnabled());
         $manualRows  = $this->gatherManualRows($projectId, $startTs, $endTs);
-        $suppressed  = $this->gatherSuppressedTaskIds($projectId);
+        $suppressed  = self::suppressedTaskIdsFromRows($this->gatherSuppressionRows($projectId));
+        $datedManual = $this->gatherDatedManualByTask($projectId);
 
         $canReportOthers = $this->canReportOnOthers($projectId, $userId);
 
         // Discovery runs at most once per request and doubles as the refine panel's data.
         $participants = $canReportOthers
-            ? $this->buildParticipants($subtaskRows, $taskRows, $startTs, $endTs, $projectId, self::allUserIds(array_merge($subtaskRows, $manualRows), $taskRows), $suppressed, $manualRows)
+            ? $this->buildParticipants($subtaskRows, $taskRows, $startTs, $endTs, $projectId, self::allUserIds(array_merge($subtaskRows, $manualRows), $taskRows), $suppressed, $manualRows, $datedManual)
             : [];
 
         [$subjectIds, $scopeDenied] = self::sanitizeSubjectUserIds(
@@ -611,7 +616,7 @@ class TimeReportModel extends Base
             $canReportOthers
         );
 
-        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $subjectIds, $suppressed, $manualRows);
+        [$contributions] = self::buildContributions($subtaskRows, $taskRows, $startTs, $endTs, $projectId, $subjectIds, $suppressed, $manualRows, $datedManual);
 
         // Labels for every contributed task, including one completed outside the range
         // or owned by somebody outside the subject set.
@@ -778,21 +783,23 @@ class TimeReportModel extends Base
     }
 
     /**
-     * Task ids whose time is already dated — by the timer or by the manual ledger — at
-     * ANY time, and so must not also be counted through the completed-task fallback.
+     * Dated manual hours per task, over ALL time and every user — what the task-level
+     * fallback must leave out because it is already counted on the day it was entered.
      *
-     * @return array<int,bool>
+     * @return array<int,float>
      */
-    private function gatherSuppressedTaskIds(int $projectId): array
+    private function gatherDatedManualByTask(int $projectId): array
     {
-        $suppressed = self::suppressedTaskIdsFromRows($this->gatherSuppressionRows($projectId));
+        $rows = $this->manualTimeQuery($projectId)
+            ->columns(\Kanboard\Model\SubtaskModel::TABLE . '.task_id', ManualTimeLog::TABLE . '.hours')
+            ->findAll();
 
-        $manual = $this->manualTimeQuery($projectId)->findAllByColumn(\Kanboard\Model\SubtaskModel::TABLE . '.task_id');
-        foreach ($manual as $taskId) {
-            $suppressed[(int) $taskId] = true;
+        $byTask = [];
+        foreach ($rows as $r) {
+            $byTask[(int) $r['task_id']] = ($byTask[(int) $r['task_id']] ?? 0.0) + (float) $r['hours'];
         }
 
-        return $suppressed;
+        return $byTask;
     }
 
     /**

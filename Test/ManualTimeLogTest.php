@@ -135,4 +135,55 @@ class ManualTimeLogTest extends Base
         $this->log()->sync($this->subtaskId, 1, 9000);
         $this->assertSame([2.0, 0.5], array_column($this->rows(), 'hours'));
     }
+
+    /**
+     * Two requests syncing the same subtask at once must not both see an empty ledger
+     * and both log the hours: sync locks the subtask row before it reads anything, and
+     * does its work in one transaction.
+     */
+    public function testSyncLocksTheSubtaskBeforeReadingTheLedger(): void
+    {
+        $this->setSpent(1.5);
+        $db = $this->container['db'];
+        $db->getStatementHandler()->withLogging();
+        $before = count($db->getLogMessages());
+
+        $this->log()->sync($this->subtaskId, 7, 5000);
+
+        $sql = implode("\n", array_slice($db->getLogMessages(), $before));
+        $lock = stripos($sql, 'UPDATE subtasks SET id = id');
+        $read = stripos($sql, ManualTimeLog::TABLE);
+        $this->assertNotFalse($lock, 'takes a write lock on the subtask row');
+        $this->assertLessThan($read, $lock, 'the lock comes before the first ledger read');
+        $this->assertFalse($db->getConnection()->inTransaction(), 'the transaction is closed');
+    }
+
+    public function testSyncInsideACallersTransactionLeavesItOpen(): void
+    {
+        $this->setSpent(1.5);
+        $db = $this->container['db'];
+        $db->startTransaction();
+        $this->log()->sync($this->subtaskId, 7, 5000);
+
+        $this->assertTrue($db->getConnection()->inTransaction());
+        $db->closeTransaction();
+        $this->assertCount(1, $this->rows());
+    }
+
+    /**
+     * The ledger is bookkeeping. If it cannot be written (a lock timeout, a missing
+     * table mid-upgrade) the user's subtask save must still go through; the next
+     * subtask event reconciles the ledger.
+     */
+    public function testALedgerFailureDoesNotBreakTheSubtaskSave(): void
+    {
+        $this->container['dispatcher']->addSubscriber(new ProgressSubscriber($this->container));
+        $this->container['db']->getConnection()->exec('DROP TABLE ' . ManualTimeLog::TABLE);
+
+        $taskId = (int) $this->container['subtaskModel']->getById($this->subtaskId)['task_id'];
+        $saved = $this->container['subtaskModel']->update(['id' => $this->subtaskId, 'task_id' => $taskId, 'time_spent' => 1.25]);
+
+        $this->assertTrue((bool) $saved);
+        $this->assertSame(1.25, (float) $this->container['subtaskModel']->getById($this->subtaskId)['time_spent']);
+    }
 }

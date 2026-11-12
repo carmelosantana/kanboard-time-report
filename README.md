@@ -26,7 +26,9 @@ Every breakdown shows **Tracked** (subtask timer), **Manual** and **Total** hour
 
 Kanboard keeps no date for time typed into a subtask's "Time spent" field, so the plugin logs each manual change with who typed it and when. Manual time counts on the day it was entered and only appears in reports whose range covers that day. Lowering a subtask's time takes it off the most recent entry first.
 
-Manual time typed before 1.6.0 has no entry date. It is listed in an "Undated manual time" notice and is not counted; clear it on the subtask and enter it again to date it.
+Manual time is dated when Kanboard processes the subtask change. On a default install that is immediate. With a background queue worker it is when the worker runs the job, so edits queued across midnight can land on the next day, and several queued edits to one subtask are logged by the first job to run.
+
+Manual time typed before 1.6.0 has no entry date. It is listed in an "Undated manual time" notice and is only counted once its task is completed (on the completion date, if the task has no timer-tracked time); clear it on the subtask and enter it again to date it.
 
 ## AI Optional — Degrades Gracefully
 

@@ -2,7 +2,8 @@
 /**
  * Undated manual time — rendered only when $report['untracked']['task_count'] > 0.
  * Time typed into a subtask before the plugin started dating manual entries: it has no
- * entry date, so no range can include it. On-screen HTML only (not in Markdown/CSV).
+ * entry date, so it is only ever counted through its task's completion-date total.
+ * On-screen HTML only (not in Markdown/CSV).
  */
 $u = $report['untracked'];
 ?>
@@ -10,7 +11,7 @@ $u = $report['untracked'];
     <p class="tr-untracked-banner">
         <strong>&#9888; <?= t('Undated manual time') ?>:</strong>
         <?= t(
-            '%d subtask(s) on %d task(s) have %sh of manually entered time with no entry date, so it is not counted in any report. To count it, clear the time on the subtask and enter it again: it will be dated the day you re-enter it.',
+            '%d subtask(s) on %d task(s) have %sh of manually entered time with no entry date. It is only counted once its task is completed, on the completion date, and only if the task has no timer-tracked time. To date it, clear the time on the subtask and enter it again: it will be dated the day you re-enter it.',
             (int) $u['subtask_count'],
             (int) $u['task_count'],
             $this->helper->timeReport->formatHours((float) $u['total_hours'])

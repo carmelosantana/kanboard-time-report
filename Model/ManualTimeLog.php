@@ -19,6 +19,33 @@ class ManualTimeLog extends Base
 
     public function sync(int $subtaskId, int $userId, ?int $now = null): void
     {
+        // Compare-then-write must be atomic per subtask: two requests that both read an
+        // empty ledger would both log the same hours, and the report would bill them twice.
+        $ownsTransaction = ! $this->db->getConnection()->inTransaction();
+        if ($ownsTransaction) {
+            $this->db->startTransaction();
+        }
+
+        try {
+            // A no-op write: it takes the row lock (MySQL, Postgres) or the database
+            // write lock (SQLite) before anything is read, so a concurrent sync of the
+            // same subtask waits here and then sees this one's entries.
+            $this->db->execute('UPDATE ' . SubtaskModel::TABLE . ' SET id = id WHERE id = ?', [$subtaskId]);
+            $this->reconcile($subtaskId, $userId, $now ?? time());
+        } catch (\Throwable $e) {
+            if ($ownsTransaction) {
+                $this->db->cancelTransaction();
+            }
+            throw $e;
+        }
+
+        if ($ownsTransaction) {
+            $this->db->closeTransaction();
+        }
+    }
+
+    private function reconcile(int $subtaskId, int $userId, int $now): void
+    {
         $subtask = $this->db->table(SubtaskModel::TABLE)->eq('id', $subtaskId)->findOne();
         if (empty($subtask)) {
             return;
@@ -40,7 +67,7 @@ class ManualTimeLog extends Base
                 'subtask_id' => $subtaskId,
                 'user_id'    => $userId,
                 'hours'      => $delta,
-                'entered_at' => $now ?? time(),
+                'entered_at' => $now,
             ]);
             return;
         }
