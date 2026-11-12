@@ -17,6 +17,8 @@ $trNum = fn (float $h): string => $this->helper->timeReport->formatHours($h);
           data-url="<?= $this->url->href('TimeReportController', 'rowSummary', ['plugin' => 'TimeReport']) ?>"
           data-outdated="<?= t('may be outdated') ?>"
           data-regenerate="<?= t('Regenerate') ?>"
+          data-copy="<?= t('Copy') ?>"
+          data-copied="<?= t('Copied') ?>"
           data-loading="<?= t('Generating summary…') ?>"
           data-error="<?= t('The summary could not be generated.') ?>"
           data-empty="<?= t('No summary available.') ?>">

@@ -23,6 +23,9 @@ class TimeReportController extends BaseController
     /** User metadata key: the breakdown last generated, reused by the one-click report. */
     private const GRANULARITY_KEY = 'timereport_granularity';
 
+    /** @var array<int, array<int,string>> accessibleProjects() per user, for this request. */
+    private array $projectsByUser = [];
+
     /** The report form: project picker, range inputs, toggles. */
     public function index(): void
     {
@@ -50,13 +53,75 @@ class TimeReportController extends BaseController
         ]));
     }
 
-    /** Validate + access-guard + compute + render the report (and the Markdown payload). */
+    /**
+     * Validate + access-guard + compute + render the report (and the Markdown payload).
+     *
+     * The forms POST here, and a POST redirects to the same report as a GET, so the
+     * page has an address: it survives a refresh and can be bookmarked. The one
+     * exception is a report-level AI summary, which costs money every time it runs —
+     * that is rendered straight from the POST and is never reachable by a link.
+     */
     public function generate(): void
     {
-        $this->checkCSRFForm();
-        $report = $this->buildReportFromRequest();
-        $this->rememberGranularity($this->userSession->getId(), $report['granularity']);
-        $this->renderReport($report);
+        if ($this->request->isPost()) {
+            $this->checkCSRFForm();
+            $values = $this->request->getValues();
+            $this->rememberGranularity($this->userSession->getId(), (string) ($values['granularity'] ?? ''));
+
+            if (empty($values['include_ai_summary']) || ! $this->isAiEnabled()) {
+                $this->response->redirect($this->reportUrl($values));
+                return;
+            }
+        }
+
+        $this->renderReport($this->buildReportFromRequest());
+    }
+
+    /** The submitted report parameters: the form body on POST, the query string on GET. */
+    protected function requestValues(): array
+    {
+        if ($this->request->isPost()) {
+            return $this->request->getValues();
+        }
+
+        parse_str((string) $this->request->getQueryString(), $values);
+
+        return $values;
+    }
+
+    /**
+     * The GET address of the report $values describes. Carries only what selects the
+     * report — never the CSRF token, and never the AI summary flag.
+     */
+    protected function reportUrl(array $values): string
+    {
+        [$start, $end] = $this->dateRange($values);
+
+        $params = [
+            'project_id'  => (int) ($values['project_id'] ?? 0),
+            'start_date'  => $start,
+            'end_date'    => $end,
+            'granularity' => in_array($values['granularity'] ?? '', self::GRANULARITIES, true) ? $values['granularity'] : 'day',
+        ];
+        if (! empty($values['include_detail'])) {
+            $params['include_detail'] = 1;
+        }
+        if (! empty($values['profile_id']) && is_string($values['profile_id'])) {
+            $params['profile_id'] = $values['profile_id'];
+        }
+
+        [$userIds, $allUsers] = $this->subjectSelection($values);
+        if ($allUsers) {
+            $params['scope'] = 'all';
+        } elseif ($userIds !== null) {
+            $params['user_ids'] = $userIds;
+        }
+
+        // Appended by hand: with URL rewriting on, the URL helper keeps only the route
+        // path and drops every other parameter.
+        $base = $this->helper->url->to('TimeReportController', 'generate', ['plugin' => 'TimeReport']);
+
+        return $base . (str_contains($base, '?') ? '&' : '?') . http_build_query($params);
     }
 
     /** Keep the breakdown the user just generated as their default for the one-click report. */
@@ -88,17 +153,21 @@ class TimeReportController extends BaseController
         ]));
     }
 
-    /** Accessible projects as id => name, for the report form and the inline control bar. */
+    /**
+     * Accessible projects as id => name (by name), for the report form and the inline
+     * control bar. One query, kept for the request: a page asks for it more than once.
+     */
     protected function accessibleProjects(int $userId): array
     {
-        $projects = [];
-        foreach ($this->projectPermissionModel->getActiveProjectIds($userId) as $pid) {
-            $p = $this->projectModel->getById((int) $pid);
-            if (! empty($p)) {
-                $projects[(int) $pid] = $p['name'];
+        if (! isset($this->projectsByUser[$userId])) {
+            $projects = [];
+            foreach ($this->projectModel->getAllByIds($this->projectPermissionModel->getActiveProjectIds($userId)) as $p) {
+                $projects[(int) $p['id']] = $p['name'];
             }
+            $this->projectsByUser[$userId] = $projects;
         }
-        return $projects;
+
+        return $this->projectsByUser[$userId];
     }
 
     /** True when the user may report on others in at least one accessible project. */
@@ -419,12 +488,12 @@ class TimeReportController extends BaseController
     protected function buildReportFromRequest(): array
     {
         $userId      = $this->userSession->getId();
-        $values      = $this->request->getValues();
+        $values      = $this->requestValues();
         $projectId   = (int) ($values['project_id'] ?? 0);
         [$startDate, $endDate] = $this->dateRange($values);
         $granularity = in_array($values['granularity'] ?? '', self::GRANULARITIES, true) ? $values['granularity'] : 'day';
         $includeDetail = ! empty($values['include_detail']);
-        $wantsAi       = ! empty($values['include_ai_summary']) && $this->isAiEnabled();
+        $wantsAi       = $this->request->isPost() && ! empty($values['include_ai_summary']) && $this->isAiEnabled();
 
         [$subjectUserIds, $allUsers] = $this->subjectSelection($values);
 

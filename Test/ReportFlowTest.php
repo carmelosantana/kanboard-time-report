@@ -28,6 +28,9 @@ class ReportFlowTest extends Base
             public function range(array $v): array { return $this->dateRange($v); }
             public function quick(int $projectId, int $userId): array { return $this->quickReport($projectId, $userId); }
             public function remember(int $userId, string $granularity): void { $this->rememberGranularity($userId, $granularity); }
+            public function link(array $v): string { return $this->reportUrl($v); }
+            public function projects(int $userId): array { return $this->accessibleProjects($userId); }
+            public function anyOthers(int $userId): bool { return $this->canReportOnAnyProject($userId); }
         };
     }
 
@@ -196,5 +199,83 @@ class ReportFlowTest extends Base
 
         $this->assertStringContainsString('no entry date', $html);
         $this->assertMatchesRegularExpression('#<a href="[^"]*task_id=42[^"]*"[^>]*>Old work</a>#', $html);
+    }
+
+    // ── A generated report has an address: refresh and bookmarks work ────────
+
+    private function query(string $url): array
+    {
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
+        return $q;
+    }
+
+    public function testReportLinkCarriesTheWholeRequest(): void
+    {
+        $q = $this->query($this->controller()->link([
+            'project_id' => '5', 'start_date' => '2026-03-31', 'end_date' => '2026-03-01', 'granularity' => 'week',
+            'include_detail' => '1', 'user_ids' => ['2', '3'], 'csrf_token' => 'secret', 'include_ai_summary' => '1',
+        ]));
+
+        $this->assertSame('5', $q['project_id']);
+        $this->assertSame(['2026-03-01', '2026-03-31'], [$q['start_date'], $q['end_date']], 'normalized range');
+        $this->assertSame('week', $q['granularity']);
+        $this->assertSame('1', $q['include_detail']);
+        $this->assertSame(['2', '3'], $q['user_ids']);
+        $this->assertArrayNotHasKey('csrf_token', $q);
+        $this->assertArrayNotHasKey('include_ai_summary', $q, 'a link must never spend AI credits when opened');
+    }
+
+    public function testReportLinkKeepsTheAllUsersIntentRatherThanIds(): void
+    {
+        $q = $this->query($this->controller()->link(['project_id' => '5', 'scope' => 'all', 'user_ids' => ['2']]));
+
+        $this->assertSame('all', $q['scope']);
+        $this->assertArrayNotHasKey('user_ids', $q);
+        $this->assertArrayNotHasKey('include_detail', $q);
+    }
+
+    public function testGetReportsNeverRunTheAiSummary(): void
+    {
+        $src = file_get_contents(dirname(__DIR__) . '/Controller/TimeReportController.php');
+        $this->assertMatchesRegularExpression('/\$wantsAi\s*=\s*\$this->request->isPost\(\)\s*&&/', $src);
+    }
+
+    // ── Project list is loaded once per page, in one query ───────────────────
+
+    public function testProjectListCostDoesNotGrowWithTheNumberOfProjects(): void
+    {
+        $cost = function (): int {
+            $c = $this->controller();
+            $h = $this->container['db']->getStatementHandler();
+            $before = $h->getNbQueries();
+            $c->projects(1);
+            $c->anyOthers(1);
+            return $h->getNbQueries() - $before;
+        };
+
+        $this->container['userSession']->initialize($this->container['userModel']->getById(1));
+        $this->project('A');
+        $this->project('B');
+        $few = $cost();
+        foreach (['C', 'D', 'E', 'F', 'G'] as $name) {
+            $this->project($name);
+        }
+
+        $this->assertSame($few, $cost());
+        $this->assertSame(['A', 'B', 'C', 'D', 'E', 'F', 'G'], array_values($this->controller()->projects(1)));
+    }
+
+    // ── Row-summary Copy button ──────────────────────────────────────────────
+
+    public function testRowSummaryCopyButtonIsTranslatedAndOnlyConfirmsARealCopy(): void
+    {
+        $tpl = file_get_contents(dirname(__DIR__) . '/Template/report/_breakdown.php');
+        $this->assertStringContainsString("data-copy=\"<?= t('Copy') ?>\"", $tpl);
+        $this->assertStringContainsString("data-copied=\"<?= t('Copied') ?>\"", $tpl);
+
+        $js = file_get_contents(dirname(__DIR__) . '/Assets/js/timereport.js');
+        $this->assertStringNotContainsString('"Copied ✓"', $js, 'label must come from the translated attribute');
+        $this->assertStringNotContainsString('.catch(function () {})', $js, 'a failed copy must not be swallowed and then confirmed');
+        $this->assertMatchesRegularExpression('/function copySummaryPanel.*?TimeReportClipboard\.copy/s', $js, 'reuses the clipboard helper with its fallback');
     }
 }

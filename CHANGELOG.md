@@ -8,6 +8,7 @@
 - Range shortcuts on both forms: This week, Last week, This month, Last month.
 - The one-click project report uses the breakdown you last generated.
 - Task rows link to the task.
+- A generated report has its own address: it survives a refresh and can be bookmarked. A report-level AI summary is the exception — it is never reachable by a link, so opening one cannot spend AI credits.
 
 ### Changed
 - **Reported totals now include dated manual time**, which was previously left out. TimeInvoice reads the same totals.
@@ -21,6 +22,8 @@
 - An empty range rendered an empty table; it now says no hours were logged.
 - A `|` or line break in a task title broke the Markdown table.
 - A refused CSV export redirected without saying why.
+- The Copy button on a row summary was untranslated and said "Copied" even when the copy failed.
+- The project list was loaded twice per page, one query per project; it is now one query.
 - The "+AI" badge showed whenever AI was installed rather than when the report had an AI summary.
 
 ## 1.5.0 — 2026-10-07
