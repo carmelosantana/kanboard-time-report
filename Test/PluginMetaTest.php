@@ -11,9 +11,9 @@ class PluginMetaTest extends Base
         return json_decode(file_get_contents(dirname(__DIR__) . '/plugin.json'), true);
     }
 
-    public function testVersionIsExactly150(): void
+    public function testVersionIsExactly160(): void
     {
-        $this->assertSame('1.5.0', $this->json()['version']);
+        $this->assertSame('1.6.0', $this->json()['version']);
     }
 
     /** tag == version across the three files the CI checks (plugin.json, Plugin.php, CHANGELOG). */

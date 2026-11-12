@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6.0 — 2026-11-12
 
 ### Added
 - **Manual time is dated and counted.** Time typed into a subtask's "Time spent" field is now logged with who typed it and when (schema version 3, `timereport_manual_time`). It is counted on the day it was entered and only in reports whose range covers that day. Lowering the time takes it off the newest entry first.
