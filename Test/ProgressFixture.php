@@ -2,7 +2,7 @@
 
 /**
  * Shared seeding for the progress/XP tests. Runs the REAL schema migrations
- * (version_1 then version_2) so every test also exercises them.
+ * (version_1 to version_3) so every test also exercises them.
  *
  * Not named *Test.php: PHPUnit collects that suffix only.
  */
@@ -23,6 +23,9 @@ trait ProgressFixture
         }
         if (! $has('timereport_xp_cache')) {
             \Kanboard\Plugin\TimeReport\Schema\version_2($pdo);
+        }
+        if (! $has('timereport_manual_time')) {
+            \Kanboard\Plugin\TimeReport\Schema\version_3($pdo);
         }
     }
 

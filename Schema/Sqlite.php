@@ -4,7 +4,7 @@ namespace Kanboard\Plugin\TimeReport\Schema;
 
 use PDO;
 
-const VERSION = 2;
+const VERSION = 3;
 
 /**
  * Move the AI summary caches out of the metadata tables.
@@ -125,5 +125,44 @@ function backfill_subtask_completions(PDO $pdo)
         FROM subtasks s
         JOIN tasks t ON t.id = s.task_id
         WHERE s.status = 2
+    ");
+}
+
+/**
+ * Manual time ledger (1.6.0).
+ *
+ * Core keeps only a running total for time typed into a subtask, so it cannot
+ * be placed in a report range. Each manual change is logged here with who typed
+ * it and when. entered_at 0 marks time that predates the ledger: it has no known
+ * entry date and is never counted in a range.
+ */
+function version_3(PDO $pdo)
+{
+    $pdo->exec("
+        CREATE TABLE timereport_manual_time (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subtask_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL DEFAULT 0,
+            hours REAL NOT NULL DEFAULT 0,
+            entered_at INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(subtask_id) REFERENCES subtasks(id) ON DELETE CASCADE
+        )
+    ");
+    $pdo->exec('CREATE INDEX timereport_manual_time_subtask_idx ON timereport_manual_time(subtask_id)');
+    $pdo->exec('CREATE INDEX timereport_manual_time_at_idx ON timereport_manual_time(entered_at)');
+
+    backfill_undated_manual_time($pdo);
+}
+
+/** Existing manual time (recorded minus timer-tracked) becomes one undated row per subtask. */
+function backfill_undated_manual_time(PDO $pdo)
+{
+    $manual = 'CAST(s.time_spent - COALESCE((SELECT SUM(stt.time_spent) FROM subtask_time_tracking stt WHERE stt.subtask_id = s.id), 0) AS DECIMAL(10,2))';
+
+    $pdo->exec("
+        INSERT INTO timereport_manual_time (subtask_id, user_id, hours, entered_at)
+        SELECT s.id, COALESCE(s.user_id, 0), $manual, 0
+        FROM subtasks s
+        WHERE $manual >= 0.01
     ");
 }

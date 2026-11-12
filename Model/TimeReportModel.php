@@ -17,6 +17,22 @@ use Kanboard\Core\Security\Role;
 class TimeReportModel extends Base
 {
     /**
+     * Hours of one subtask_time_tracking row: the recorded figure, else end − start.
+     * 0.0 for a timer that is still running.
+     */
+    public static function rowHours(array $row): float
+    {
+        $timeSpent = (float) ($row['time_spent'] ?? 0);
+        if ($timeSpent > 0) {
+            return $timeSpent;
+        }
+        $start = (int) ($row['start'] ?? 0);
+        $end   = (int) ($row['end'] ?? 0);
+
+        return $end > $start ? ($end - $start) / 3600 : 0.0;
+    }
+
+    /**
      * Task ids disqualified from the task-level fallback, from lean tracking rows.
      *
      * Fed by an UNRANGED query: tasks.time_spent is an all-time pool, so tracked time
@@ -31,15 +47,7 @@ class TimeReportModel extends Base
     {
         $suppressed = [];
         foreach ($rows as $row) {
-            $timeSpent = (float) $row['time_spent'];
-            if ($timeSpent > 0) {
-                $hours = $timeSpent;
-            } else {
-                $start = (int) $row['start'];
-                $end   = (int) $row['end'];
-                $hours = $end > $start ? ($end - $start) / 3600 : 0.0;
-            }
-            if (round($hours, 2) > 0) {
+            if (round(self::rowHours($row), 2) > 0) {
                 $suppressed[(int) $row['task_id']] = true;
             }
         }
@@ -78,13 +86,7 @@ class TimeReportModel extends Base
                 continue;
             }
 
-            $timeSpent = (float) $row['time_spent'];
-            if ($timeSpent > 0) {
-                $hours = $timeSpent;
-            } else {
-                $end = (int) $row['end'];
-                $hours = $end > $start ? ($end - $start) / 3600 : 0.0;
-            }
+            $hours = self::rowHours($row);
 
             // An entry that rounds to 0.00h at the report's own precision represents no
             // logged work — a still-running timer, or an instant start/stop toggle.
@@ -775,16 +777,8 @@ class TimeReportModel extends Base
             ->findAll();
 
         foreach ($ttRows as $tt) {
-            $sid       = (int) $tt['subtask_id'];
-            $timeSpent = (float) $tt['time_spent'];
-            if ($timeSpent > 0) {
-                $hours = $timeSpent;
-            } else {
-                $start = (int) $tt['start'];
-                $end   = (int) $tt['end'];
-                $hours = $end > $start ? ($end - $start) / 3600 : 0.0;
-            }
-            $trackedBySubtask[$sid] = ($trackedBySubtask[$sid] ?? 0.0) + $hours;
+            $sid = (int) $tt['subtask_id'];
+            $trackedBySubtask[$sid] = ($trackedBySubtask[$sid] ?? 0.0) + self::rowHours($tt);
         }
 
         return [$records, $trackedBySubtask, $taskMeta];
