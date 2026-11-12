@@ -5,11 +5,12 @@ namespace Kanboard\Plugin\TimeReport\Subscriber;
 use Kanboard\Core\Base;
 use Kanboard\Model\SubtaskModel;
 use Kanboard\Model\TaskModel;
+use Kanboard\Plugin\TimeReport\Model\ManualTimeLog;
 use Kanboard\Plugin\TimeReport\Model\SubtaskCompletionStamp;
 use Kanboard\Plugin\TimeReport\Model\XpCache;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-/** Keeps completion stamps current and the XP cache honest (spec Kanboard #5383). */
+/** Keeps completion stamps and the manual-time ledger current and the XP cache honest (spec Kanboard #5383). */
 class ProgressSubscriber extends Base implements EventSubscriberInterface
 {
     public static function getSubscribedEvents(): array
@@ -32,6 +33,10 @@ class ProgressSubscriber extends Base implements EventSubscriberInterface
         $subtask = $event['subtask'] ?? null;
         if (is_array($subtask) && isset($subtask['id'])) {
             (new SubtaskCompletionStamp($this->container))->sync((int) $subtask['id'], (int) $subtask['status'], (int) $subtask['user_id']);
+
+            // Timer stops fire no subtask event in core, so a time change seen here was typed.
+            $typedBy = $this->userSession->isLogged() ? (int) $this->userSession->getId() : (int) $subtask['user_id'];
+            (new ManualTimeLog($this->container))->sync((int) $subtask['id'], $typedBy);
         }
         $this->onChange($event);
     }

@@ -67,6 +67,9 @@
         });
     }
 
+    // Shared with the per-row summary panels below.
+    window.TimeReportClipboard = { copy: copyText };
+
     document.addEventListener("click", function (e) {
         var valCell = e.target.closest("[data-tr-copyval]");
         if (valCell) {
@@ -163,7 +166,7 @@
         regen.setAttribute("data-row-key", rowKey);
         actions.appendChild(regen);
 
-        var copy = el("button", "btn tr-copy-summary", "Copy");
+        var copy = el("button", "btn tr-copy-summary", (ctx && ctx.getAttribute("data-copy")) || "Copy");
         copy.setAttribute("type", "button");
         copy.setAttribute("data-tr-copy-summary", "");
         actions.appendChild(copy);
@@ -249,6 +252,21 @@
             return;
         }
 
+        // Range shortcut: fill the dates of the form the button sits in (ISO, which the
+        // server accepts whatever the user's date format is).
+        var presetBtn = e.target.closest("[data-tr-preset]");
+        if (presetBtn) {
+            e.preventDefault();
+            var presetForm = presetBtn.closest("form");
+            var startInput = presetForm ? presetForm.querySelector('[name="start_date"]') : null;
+            var endInput = presetForm ? presetForm.querySelector('[name="end_date"]') : null;
+            if (startInput && endInput) {
+                startInput.value = presetBtn.getAttribute("data-start");
+                endInput.value = presetBtn.getAttribute("data-end");
+            }
+            return;
+        }
+
         var genAllBtn = e.target.closest("[data-tr-generate-all]");
         if (genAllBtn) { e.preventDefault(); generateAll(genAllBtn); return; }
 
@@ -283,13 +301,14 @@
             parts.push("");
             for (var i = 0; i < lis.length; i++) { parts.push("- " + lis[i].textContent); }
         }
-        var md = parts.join("\n");
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(md).catch(function () {});
-        }
-        var original = btn.textContent;
-        btn.textContent = "Copied ✓";
-        setTimeout(function () { btn.textContent = original; }, 1200);
+        var ctx = context();
+        // Confirms only once the text is on the clipboard (the helper falls back to
+        // execCommand where the async clipboard API is unavailable or refused).
+        window.TimeReportClipboard.copy(parts.join("\n"), function () {
+            var original = btn.textContent;
+            btn.textContent = ((ctx && ctx.getAttribute("data-copied")) || "Copied") + " ✓";
+            setTimeout(function () { btn.textContent = original; }, 1200);
+        });
     }
 
     // "Generate all summaries": fill every summarizable row, cache-respecting, with a

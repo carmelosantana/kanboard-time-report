@@ -15,10 +15,10 @@ class ProgressSchemaTest extends Base
         return $row ?: null;
     }
 
-    public function testVersionIsTwo(): void
+    public function testVersionIsThree(): void
     {
         require_once dirname(__DIR__) . '/Schema/Sqlite.php';
-        $this->assertSame(2, \Kanboard\Plugin\TimeReport\Schema\VERSION);
+        $this->assertSame(3, \Kanboard\Plugin\TimeReport\Schema\VERSION);
     }
 
     public function testVersion2CreatesBothTables(): void

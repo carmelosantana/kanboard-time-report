@@ -20,6 +20,14 @@ TimeReport aggregates completed work and time spent across a project over a spec
 - **Copy as Markdown**: One-click copy of the report to clipboard in Markdown format, ready to paste into a document or email.
 - **Export CSV**: Download the report as a CSV file for further analysis or invoice line-item creation.
 
+### Tracked and manual time
+
+Every breakdown shows **Tracked** (subtask timer), **Manual** and **Total** hours.
+
+Kanboard keeps no date for time typed into a subtask's "Time spent" field, so the plugin logs each manual change with who typed it and when. Manual time counts on the day it was entered and only appears in reports whose range covers that day. Lowering a subtask's time takes it off the most recent entry first.
+
+Manual time typed before 1.6.0 has no entry date. It is listed in an "Undated manual time" notice and is not counted; clear it on the subtask and enter it again to date it.
+
 ## AI Optional — Degrades Gracefully
 
 TimeReport integrates with the [AiConnector](https://github.com/carmelosantana/kanboard-ai-connector) plugin to add optional AI-generated narrative summaries of the completed work. If AiConnector is not installed, the report displays the hours table alone — no loss of core functionality, and no AI controls are shown.

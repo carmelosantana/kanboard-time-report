@@ -11,6 +11,7 @@
     <?= $this->form->date(t('Start date'), 'start_date', $values, [], ['required']) ?>
 
     <?= $this->form->date(t('End date'), 'end_date', $values, [], ['required']) ?>
+    <?= $this->render('TimeReport:report/_presets') ?>
 
     <?= $this->form->label(t('Breakdown'), 'granularity') ?>
     <?= $this->form->select('granularity', ['day' => t('Per day'), 'week' => t('Per week'), 'task' => t('Per task'), 'total' => t('Total only'), 'user' => t('By user')], $values) ?>

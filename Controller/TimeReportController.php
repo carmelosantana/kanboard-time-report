@@ -20,6 +20,12 @@ class TimeReportController extends BaseController
 {
     private const GRANULARITIES = ['day', 'week', 'task', 'total', 'user'];
 
+    /** User metadata key: the breakdown last generated, reused by the one-click report. */
+    private const GRANULARITY_KEY = 'timereport_granularity';
+
+    /** @var array<int, array<int,string>> accessibleProjects() per user, for this request. */
+    private array $projectsByUser = [];
+
     /** The report form: project picker, range inputs, toggles. */
     public function index(): void
     {
@@ -47,12 +53,83 @@ class TimeReportController extends BaseController
         ]));
     }
 
-    /** Validate + access-guard + compute + render the report (and the Markdown payload). */
+    /**
+     * Validate + access-guard + compute + render the report (and the Markdown payload).
+     *
+     * The forms POST here, and a POST redirects to the same report as a GET, so the
+     * page has an address: it survives a refresh and can be bookmarked. The one
+     * exception is a report-level AI summary, which costs money every time it runs —
+     * that is rendered straight from the POST and is never reachable by a link.
+     */
     public function generate(): void
     {
-        $this->checkCSRFForm();
-        $report = $this->buildReportFromRequest();
-        $this->renderReport($report);
+        if ($this->request->isPost()) {
+            $this->checkCSRFForm();
+            $values = $this->request->getValues();
+            $this->rememberGranularity($this->userSession->getId(), (string) ($values['granularity'] ?? ''));
+
+            if (empty($values['include_ai_summary']) || ! $this->isAiEnabled()) {
+                $this->response->redirect($this->reportUrl($values));
+                return;
+            }
+        }
+
+        $this->renderReport($this->buildReportFromRequest());
+    }
+
+    /** The submitted report parameters: the form body on POST, the query string on GET. */
+    protected function requestValues(): array
+    {
+        if ($this->request->isPost()) {
+            return $this->request->getValues();
+        }
+
+        parse_str((string) $this->request->getQueryString(), $values);
+
+        return $values;
+    }
+
+    /**
+     * The GET address of the report $values describes. Carries only what selects the
+     * report — never the CSRF token, and never the AI summary flag.
+     */
+    protected function reportUrl(array $values): string
+    {
+        [$start, $end] = $this->dateRange($values);
+
+        $params = [
+            'project_id'  => (int) ($values['project_id'] ?? 0),
+            'start_date'  => $start,
+            'end_date'    => $end,
+            'granularity' => in_array($values['granularity'] ?? '', self::GRANULARITIES, true) ? $values['granularity'] : 'day',
+        ];
+        if (! empty($values['include_detail'])) {
+            $params['include_detail'] = 1;
+        }
+        if (! empty($values['profile_id']) && is_string($values['profile_id'])) {
+            $params['profile_id'] = $values['profile_id'];
+        }
+
+        [$userIds, $allUsers] = $this->subjectSelection($values);
+        if ($allUsers) {
+            $params['scope'] = 'all';
+        } elseif ($userIds !== null) {
+            $params['user_ids'] = $userIds;
+        }
+
+        // Appended by hand: with URL rewriting on, the URL helper keeps only the route
+        // path and drops every other parameter.
+        $base = $this->helper->url->to('TimeReportController', 'generate', ['plugin' => 'TimeReport']);
+
+        return $base . (str_contains($base, '?') ? '&' : '?') . http_build_query($params);
+    }
+
+    /** Keep the breakdown the user just generated as their default for the one-click report. */
+    protected function rememberGranularity(int $userId, string $granularity): void
+    {
+        if (in_array($granularity, self::GRANULARITIES, true)) {
+            $this->userMetadataModel->save($userId, [self::GRANULARITY_KEY => $granularity]);
+        }
     }
 
     /**
@@ -72,20 +149,25 @@ class TimeReportController extends BaseController
             'projects'          => $this->accessibleProjects($userId),
             'profiles'          => $this->aiProfiles(),
             'can_report_others' => $this->canReportOnAnyProject($userId),
+            'current_user_id'   => (int) $userId,
         ]));
     }
 
-    /** Accessible projects as id => name, for the report form and the inline control bar. */
+    /**
+     * Accessible projects as id => name (by name), for the report form and the inline
+     * control bar. One query, kept for the request: a page asks for it more than once.
+     */
     protected function accessibleProjects(int $userId): array
     {
-        $projects = [];
-        foreach ($this->projectPermissionModel->getActiveProjectIds($userId) as $pid) {
-            $p = $this->projectModel->getById((int) $pid);
-            if (! empty($p)) {
-                $projects[(int) $pid] = $p['name'];
+        if (! isset($this->projectsByUser[$userId])) {
+            $projects = [];
+            foreach ($this->projectModel->getAllByIds($this->projectPermissionModel->getActiveProjectIds($userId)) as $p) {
+                $projects[(int) $p['id']] = $p['name'];
             }
+            $this->projectsByUser[$userId] = $projects;
         }
-        return $projects;
+
+        return $this->projectsByUser[$userId];
     }
 
     /** True when the user may report on others in at least one accessible project. */
@@ -118,11 +200,18 @@ class TimeReportController extends BaseController
         $this->renderReport($report);
     }
 
-    /** Fixed quick defaults: this month to date, per task, no detail, no AI. Access-guarded by the model. */
+    /**
+     * Quick defaults: this month to date, the breakdown the user last generated (per
+     * task until they have), no detail, no AI. Access-guarded by the model.
+     */
     protected function quickReport(int $projectId, int $userId): array
     {
-        // report() already returns include_detail => false for the false argument above.
-        return $this->timeReportModel->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', false, $userId);
+        $granularity = (string) $this->userMetadataModel->get($userId, self::GRANULARITY_KEY, 'task');
+        if (! in_array($granularity, self::GRANULARITIES, true)) {
+            $granularity = 'task';
+        }
+
+        return $this->timeReportModel->report($projectId, date('Y-m-01'), date('Y-m-d'), $granularity, false, $userId);
     }
 
     /** The project id to pre-select in the form, or 0 when the requested id isn't in the user's accessible list. */
@@ -140,6 +229,7 @@ class TimeReportController extends BaseController
         // A CSV carries no on-screen notice, so a silently narrowed export would look
         // like a valid team invoice covering people it does not contain. Refuse it.
         if (! empty($report['scope_denied'])) {
+            $this->flash->failure(t('The CSV was not exported: you do not have permission to include other users in this project.'));
             $this->response->redirect($this->helper->url->to('TimeReportController', 'index', ['plugin' => 'TimeReport']));
             return;
         }
@@ -256,8 +346,7 @@ class TimeReportController extends BaseController
             return ['error' => t('Invalid summary request.')];
         }
 
-        $startDate = $this->validDate($values['start_date'] ?? '', date('Y-m-01'));
-        $endDate   = $this->validDate($values['end_date'] ?? '', date('Y-m-d'));
+        [$startDate, $endDate] = $this->dateRange($values);
         [$subjectUserIds, $allUsers] = $this->subjectSelection($values);
 
         // Access is enforced inside report(); detail on so subtasks/descriptions are present.
@@ -399,13 +488,12 @@ class TimeReportController extends BaseController
     protected function buildReportFromRequest(): array
     {
         $userId      = $this->userSession->getId();
-        $values      = $this->request->getValues();
+        $values      = $this->requestValues();
         $projectId   = (int) ($values['project_id'] ?? 0);
-        $startDate   = $this->validDate($values['start_date'] ?? '', date('Y-m-01'));
-        $endDate     = $this->validDate($values['end_date'] ?? '', date('Y-m-d'));
+        [$startDate, $endDate] = $this->dateRange($values);
         $granularity = in_array($values['granularity'] ?? '', self::GRANULARITIES, true) ? $values['granularity'] : 'day';
         $includeDetail = ! empty($values['include_detail']);
-        $wantsAi       = ! empty($values['include_ai_summary']) && $this->isAiEnabled();
+        $wantsAi       = $this->request->isPost() && ! empty($values['include_ai_summary']) && $this->isAiEnabled();
 
         [$subjectUserIds, $allUsers] = $this->subjectSelection($values);
 
@@ -448,11 +536,33 @@ class TimeReportController extends BaseController
      */
     protected function subjectSelection(array $values): array
     {
+        $scope = (string) ($values['scope'] ?? '');
+
+        // An explicit "Just me" / "All users" choice wins over a user selection the same
+        // form is still carrying, or the filters could never leave a hand-picked subset.
+        if ($scope === 'all' || $scope === 'self') {
+            return [null, $scope === 'all'];
+        }
+
         if (! empty($values['user_ids']) && is_array($values['user_ids'])) {
             return [array_map('intval', $values['user_ids']), false];
         }
 
-        return [null, ($values['scope'] ?? '') === 'all'];
+        return [null, false];
+    }
+
+    /**
+     * The submitted range as [start, end] ISO dates. A reversed range is swapped: read
+     * literally it matches nothing, which looks like "no hours" rather than a typo.
+     *
+     * @return array{0:string,1:string}
+     */
+    protected function dateRange(array $values): array
+    {
+        $start = $this->validDate((string) ($values['start_date'] ?? ''), date('Y-m-01'));
+        $end   = $this->validDate((string) ($values['end_date'] ?? ''), date('Y-m-d'));
+
+        return $start <= $end ? [$start, $end] : [$end, $start];
     }
 
     /** AiGate delegate — overridable in tests. */

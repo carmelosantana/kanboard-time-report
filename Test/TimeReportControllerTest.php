@@ -116,7 +116,7 @@ class TimeReportControllerTest extends Base
         // short-circuits). getValues() only returns POST when a valid csrf_token is
         // present, so mint one from the same container token service the request uses.
         $csrf = $this->container['token']->getCSRFToken();
-        $this->container['request'] = new \Kanboard\Core\Http\Request($this->container, [], [], [
+        $this->container['request'] = new \Kanboard\Core\Http\Request($this->container, ['REQUEST_METHOD' => 'POST'], [], [
             'csrf_token'         => $csrf,
             'project_id'         => '5',
             'start_date'         => '2026-03-01',
