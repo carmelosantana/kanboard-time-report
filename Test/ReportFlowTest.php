@@ -99,6 +99,30 @@ class ReportFlowTest extends Base
         $this->assertStringNotContainsString('value="selected"', $all . $me);
     }
 
+    public function testAllUsersStaysSelectedWhenTheRangeHasNoHours(): void
+    {
+        // Nobody logged time, so the subject set fell back to the viewer — but the
+        // request was for everyone, and changing the dates must not quietly narrow it.
+        $form = $this->filtersForm($this->show($this->report(['all_users' => true])));
+
+        $this->assertMatchesRegularExpression('#<option value="all" selected="selected">#', $form);
+    }
+
+    public function testReportRecordsTheAllUsersIntentOnlyWhenPermitted(): void
+    {
+        $projectId = $this->project('Acme');
+        $model = new TimeReportModel($this->container);
+        $bob = $this->user('bob');
+        $this->container['projectUserRoleModel']->addUser($projectId, $bob, 'project-member');
+
+        $this->container['userSession']->initialize($this->container['userModel']->getById(1));
+        $this->assertTrue($model->report($projectId, '2026-03-01', '2026-03-31', 'day', false, 1, null, true)['all_users']);
+        $this->assertFalse($model->report($projectId, '2026-03-01', '2026-03-31', 'day', false, 1)['all_users']);
+
+        $this->container['userSession']->initialize($this->container['userModel']->getById($bob));
+        $this->assertFalse($model->report($projectId, '2026-03-01', '2026-03-31', 'day', false, $bob, null, true)['all_users']);
+    }
+
     public function testFiltersFormKeepsTheChosenAiProfile(): void
     {
         $profiles = [['id' => 'fast', 'label' => 'Fast'], ['id' => 'deep', 'label' => 'Deep']];

@@ -10,7 +10,9 @@ $trGranLabels = [
 // subset. A subset has to travel with the filters form or "Update" would drop it.
 $trSubject = array_map('intval', $report['subject_user_ids'] ?? []);
 $trEveryone = array_map('intval', array_keys($report['participants'] ?? []));
-if ($trSubject === [(int) ($current_user_id ?? 0)]) {
+if (! empty($report['all_users'])) {
+    $trScope = 'all';
+} elseif ($trSubject === [(int) ($current_user_id ?? 0)]) {
     $trScope = 'self';
 } elseif ($trEveryone !== [] && array_diff($trEveryone, $trSubject) === []) {
     $trScope = 'all';

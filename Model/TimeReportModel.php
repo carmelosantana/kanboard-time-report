@@ -676,6 +676,9 @@ class TimeReportModel extends Base
             'users'             => $users,
             'participants'      => $participants,
             'multi_user'        => count($subjectIds) > 1,
+            // The granted "every participant" intent, kept even when nobody has hours
+            // in range and the subject set therefore fell back to the requester.
+            'all_users'         => $allUsers && $canReportOthers,
             'can_report_others' => $canReportOthers,
             'scope_denied'      => $scopeDenied,
         ];
