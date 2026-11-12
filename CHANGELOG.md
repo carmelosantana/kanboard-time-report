@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.1 — 2026-11-12
+
+### Fixed
+- **Dating new manual time no longer takes hours out of an earlier period.** A task completed with only undated manual time is reported on its completion date. In 1.6.0, adding dated time to that task later switched that off, so the earlier period dropped to zero. The dated hours are now taken off the completed-task total instead: the earlier period keeps its hours and the new hours count once, on the day they were entered.
+- **Two simultaneous edits to one subtask could log the same manual hours twice.** The ledger update now locks the subtask and runs in one transaction.
+- A failure to update the ledger (a lock timeout, for example) no longer fails the subtask save; the ledger catches up on the next edit of that subtask.
+
+### Changed
+- The "Undated manual time" notice now says when that time is counted: once its task is completed, on the completion date, if the task has no timer-tracked time.
+
 ## 1.6.0 — 2026-11-12
 
 ### Added
