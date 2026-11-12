@@ -64,7 +64,7 @@ class TimeReportHelperTest extends Base
         $this->assertStringContainsString('2026-03-01', $md);
         $this->assertStringContainsString('2026-03-31', $md);
         $this->assertStringContainsString('**Total hours:** 6.50', $md);
-        $this->assertStringContainsString('| Tue 2026-03-10 | 3.50 |', $md);
+        $this->assertStringContainsString('| Tue 2026-03-10 | 3.50 | 0.00 | 3.50 | 2 |', $md);
     }
 
     public function testMarkdownPrefixesDatesWithWeekday(): void
@@ -99,8 +99,8 @@ class TimeReportHelperTest extends Base
         $csv = $this->helper()->toCsv($this->sampleReport(true));
         $this->assertStringContainsString('# Time Report,Acme Website', $csv);
         $this->assertStringContainsString('# Total hours,6.50', $csv);
-        $this->assertStringContainsString("Label,Hours", $csv);
-        $this->assertStringContainsString('2026-03-10,3.50', $csv);
+        $this->assertStringContainsString("Label,Tracked,Manual,Hours", $csv);
+        $this->assertStringContainsString('2026-03-10,3.50,0.00,3.50', $csv);
         // Detail header + escaped title (embedded quotes doubled, field wrapped)
         $this->assertStringContainsString('Reference,Title,Hours,Completed,Category,Tags', $csv);
         $this->assertStringContainsString('"Build, ""the"" API"', $csv);
@@ -113,22 +113,22 @@ class TimeReportHelperTest extends Base
         $report['granularity'] = 'task';
         $report['breakdown'] = [['key' => '7', 'label' => '#7 Build API', 'hours' => 3.0, 'task_count' => 1]];
         $csv = $this->helper()->toCsv($report);
-        $this->assertStringContainsString('Label,Hours,Tasks', $csv);
+        $this->assertStringContainsString('Label,Tracked,Manual,Hours,Tasks', $csv);
     }
 
     public function testCsvSummaryColumnPresentOnlyWhenAttached(): void
     {
         $report = $this->sampleReport();
         // No row_summaries → no Summary column (unchanged behavior).
-        $this->assertStringNotContainsString('Label,Hours,Tasks,Summary', $this->helper()->toCsv($report));
+        $this->assertStringNotContainsString('Hours,Tasks,Summary', $this->helper()->toCsv($report));
 
         // With cache-only summaries attached, the Summary column appears; uncached rows blank.
         $report['row_summaries'] = ['2026-03-10' => 'Did the API work'];
         $csv = $this->helper()->toCsv($report);
-        $this->assertStringContainsString('Label,Hours,Tasks,Summary', $csv);
+        $this->assertStringContainsString('Label,Tracked,Manual,Hours,Tasks,Summary', $csv);
         $this->assertStringContainsString('Did the API work', $csv);
         // The 2026-03-11 row has no cached summary → its Summary cell is blank.
-        $this->assertMatchesRegularExpression('/2026-03-11,3\.00,1,\r?\n/', $csv, 'uncached row exports a blank Summary cell');
+        $this->assertMatchesRegularExpression('/2026-03-11,3\.00,0\.00,3\.00,1,\r?\n/', $csv, 'uncached row exports a blank Summary cell');
     }
 
     public function testCsvFilenameSlug(): void
@@ -178,8 +178,8 @@ class TimeReportHelperTest extends Base
     {
         $md = $this->helper()->toMarkdown($this->multiUserReport());
 
-        $this->assertStringContainsString('| User | Hours | Tasks |', $md);
-        $this->assertStringContainsString('| Alice | 5.00 | 2 |', $md);
+        $this->assertStringContainsString('| User | Tracked | Manual | Total | Tasks |', $md);
+        $this->assertStringContainsString('| Alice | 5.00 | 0.00 | 5.00 | 2 |', $md);
     }
 
     public function testCsvAddsAssigneeColumnWhenMultiUser(): void
@@ -217,8 +217,8 @@ class TimeReportHelperTest extends Base
     {
         $report = [
             'project_name' => 'Acme', 'start_date' => '2026-03-01', 'end_date' => '2026-03-31',
-            'granularity'  => 'task', 'total_hours' => 3.0,
-            'breakdown'    => [['key' => '10', 'label' => '#10 Ship it', 'hours' => 3.0, 'task_count' => 1]],
+            'granularity'  => 'task', 'total_hours' => 3.0, 'tracked_hours' => 2.0, 'manual_hours' => 1.0,
+            'breakdown'    => [['key' => '10', 'label' => '#10 Ship it', 'hours' => 3.0, 'tracked_hours' => 2.0, 'manual_hours' => 1.0, 'task_count' => 1]],
             'include_detail' => true,
             'detail' => [
                 ['task_id' => 10, 'reference' => 'R1', 'title' => 'Ship it', 'assignee' => 'Alice',
@@ -231,10 +231,12 @@ class TimeReportHelperTest extends Base
             . "\n"
             . "**Range:** 2026-03-01 → 2026-03-31\n"
             . "**Total hours:** 3.00\n"
+            . "**Tracked hours:** 2.00\n"
+            . "**Manual hours:** 1.00\n"
             . "\n"
-            . "| Task | Hours |\n"
-            . "| --- | ---: |\n"
-            . "| #10 Ship it | 3.00 |\n"
+            . "| Task | Tracked | Manual | Total |\n"
+            . "| --- | ---: | ---: | ---: |\n"
+            . "| #10 Ship it | 2.00 | 1.00 | 3.00 |\n"
             . "\n"
             . "## Completed tasks\n"
             . "\n"
@@ -245,14 +247,29 @@ class TimeReportHelperTest extends Base
         $expectedCsv = "# Time Report,Acme\r\n"
             . "# Range,2026-03-01,2026-03-31\r\n"
             . "# Total hours,3.00\r\n"
+            . "# Tracked hours,2.00\r\n"
+            . "# Manual hours,1.00\r\n"
             . "\r\n"
-            . "Label,Hours,Tasks\r\n"
-            . "#10 Ship it,3.00,1\r\n"
+            . "Label,Tracked,Manual,Hours,Tasks\r\n"
+            . "#10 Ship it,2.00,1.00,3.00,1\r\n"
             . "\r\n"
             . "Reference,Title,Hours,Completed,Category,Tags\r\n"
             . "R1,Ship it,3.00,2026-03-12,Dev,x\r\n";
 
         $this->assertSame($expectedMd, $this->helper()->toMarkdown($report));
         $this->assertSame($expectedCsv, $this->helper()->toCsv($report));
+    }
+
+    public function testMarkdownEscapesPipesSoATitleCannotBreakTheTable(): void
+    {
+        $report = $this->sampleReport(true);
+        $report['granularity'] = 'task';
+        $report['breakdown'] = [['key' => '7', 'label' => '#7 API | v2', 'hours' => 3.0, 'task_count' => 1]];
+        $report['detail'][0]['title'] = "Build | ship\nnow";
+
+        $md = $this->helper()->toMarkdown($report);
+
+        $this->assertStringContainsString('| #7 API \\| v2 | 3.00 |', $md);
+        $this->assertStringContainsString('| Build \\| ship now |', $md);
     }
 }

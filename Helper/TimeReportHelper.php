@@ -40,24 +40,20 @@ class TimeReportHelper extends Base
         $lines[] = '';
         $lines[] = '**Range:** ' . $report['start_date'] . ' → ' . $report['end_date'];
         $lines[] = '**Total hours:** ' . $this->formatHours((float) $report['total_hours']);
+        if (isset($report['tracked_hours'], $report['manual_hours'])) {
+            $lines[] = '**Tracked hours:** ' . $this->formatHours((float) $report['tracked_hours']);
+            $lines[] = '**Manual hours:** ' . $this->formatHours((float) $report['manual_hours']);
+        }
         if (isset($report['xp']['total'])) {
             $lines[] = '**XP earned:** ' . (int) $report['xp']['total'];
         }
         $lines[] = '';
 
-        if ($isTask) {
-            $lines[] = '| Task | Hours |';
-            $lines[] = '| --- | ---: |';
-        } else {
-            $lines[] = '| ' . $this->breakdownHeader($report['granularity']) . ' | Hours | Tasks |';
-            $lines[] = '| --- | ---: | ---: |';
-        }
+        $lines[] = '| ' . $this->breakdownHeader($report['granularity']) . ' | Tracked | Manual | Total |' . ($isTask ? '' : ' Tasks |');
+        $lines[] = '| --- | ---: | ---: | ---: |' . ($isTask ? '' : ' ---: |');
         foreach ($report['breakdown'] as $row) {
-            if ($isTask) {
-                $lines[] = '| ' . $this->withWeekday($row['label']) . ' | ' . $this->formatHours((float) $row['hours']) . ' |';
-            } else {
-                $lines[] = '| ' . $this->withWeekday($row['label']) . ' | ' . $this->formatHours((float) $row['hours']) . ' | ' . (int) $row['task_count'] . ' |';
-            }
+            $lines[] = '| ' . $this->mdCell($this->withWeekday($row['label'])) . ' | ' . implode(' | ', $this->hourCells($row)) . ' |'
+                . ($isTask ? '' : ' ' . (int) $row['task_count'] . ' |');
         }
 
         if (! empty($report['include_detail']) && ! empty($report['detail'])) {
@@ -72,9 +68,9 @@ class TimeReportHelper extends Base
                 ? '| --- | --- | --- | ---: | --- | --- | --- |'
                 : '| --- | --- | ---: | --- | --- | --- |';
             foreach ($report['detail'] as $d) {
-                $assignee = $multi ? (($d['assignee'] ?? '') . ' | ') : '';
-                $lines[] = '| ' . $d['reference'] . ' | ' . $d['title'] . ' | ' . $assignee . $this->formatHours((float) $d['hours'])
-                    . ' | ' . $this->withWeekday($d['date_completed']) . ' | ' . $d['category'] . ' | ' . implode('; ', $d['tags']) . ' |';
+                $assignee = $multi ? ($this->mdCell((string) ($d['assignee'] ?? '')) . ' | ') : '';
+                $lines[] = '| ' . $this->mdCell($d['reference']) . ' | ' . $this->mdCell($d['title']) . ' | ' . $assignee . $this->formatHours((float) $d['hours'])
+                    . ' | ' . $this->withWeekday($d['date_completed']) . ' | ' . $this->mdCell($d['category']) . ' | ' . $this->mdCell(implode('; ', $d['tags'])) . ' |';
             }
         }
 
@@ -100,6 +96,10 @@ class TimeReportHelper extends Base
         $out[] = $this->csvRow(['# Time Report', $report['project_name']]);
         $out[] = $this->csvRow(['# Range', $report['start_date'], $report['end_date']]);
         $out[] = $this->csvRow(['# Total hours', $this->formatHours((float) $report['total_hours'])]);
+        if (isset($report['tracked_hours'], $report['manual_hours'])) {
+            $out[] = $this->csvRow(['# Tracked hours', $this->formatHours((float) $report['tracked_hours'])]);
+            $out[] = $this->csvRow(['# Manual hours', $this->formatHours((float) $report['manual_hours'])]);
+        }
         if (isset($report['xp']['total'])) {
             $out[] = $this->csvRow(['# XP earned', (string) (int) $report['xp']['total']]);
         }
@@ -112,14 +112,14 @@ class TimeReportHelper extends Base
         $withSummary = isset($report['row_summaries']) && is_array($report['row_summaries']);
         $summaries = $withSummary ? $report['row_summaries'] : [];
 
-        $header = ['Label', 'Hours', 'Tasks'];
+        $header = ['Label', 'Tracked', 'Manual', 'Hours', 'Tasks'];
         if ($withSummary) {
             $header[] = 'Summary';
         }
         $out[] = $this->csvRow($header);
 
         foreach ($report['breakdown'] as $row) {
-            $fields = [$row['label'], $this->formatHours((float) $row['hours']), (string) (int) $row['task_count']];
+            $fields = [$row['label'], ...$this->hourCells($row), (string) (int) $row['task_count']];
             if ($withSummary) {
                 $fields[] = (string) ($summaries[(string) $row['key']] ?? '');
             }
@@ -156,6 +156,30 @@ class TimeReportHelper extends Base
             $slug = 'project';
         }
         return 'time-report-' . $slug . '-' . $start . '_' . $end . '.csv';
+    }
+
+    /**
+     * A row's [tracked, manual, total] hours, formatted. A row without the split
+     * (an older caller's aggregate) is all tracked.
+     *
+     * @return array{0:string,1:string,2:string}
+     */
+    private function hourCells(array $row): array
+    {
+        $total  = (float) $row['hours'];
+        $manual = (float) ($row['manual_hours'] ?? 0.0);
+
+        return [
+            $this->formatHours((float) ($row['tracked_hours'] ?? ($total - $manual))),
+            $this->formatHours($manual),
+            $this->formatHours($total),
+        ];
+    }
+
+    /** One Markdown table cell: a pipe or line break in the text would split the row. */
+    private function mdCell(string $text): string
+    {
+        return str_replace('|', '\\|', preg_replace('/\s*[\r\n]+\s*/', ' ', $text));
     }
 
     private function breakdownHeader(string $granularity): string
