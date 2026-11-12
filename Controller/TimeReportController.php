@@ -20,6 +20,9 @@ class TimeReportController extends BaseController
 {
     private const GRANULARITIES = ['day', 'week', 'task', 'total', 'user'];
 
+    /** User metadata key: the breakdown last generated, reused by the one-click report. */
+    private const GRANULARITY_KEY = 'timereport_granularity';
+
     /** The report form: project picker, range inputs, toggles. */
     public function index(): void
     {
@@ -52,7 +55,16 @@ class TimeReportController extends BaseController
     {
         $this->checkCSRFForm();
         $report = $this->buildReportFromRequest();
+        $this->rememberGranularity($this->userSession->getId(), $report['granularity']);
         $this->renderReport($report);
+    }
+
+    /** Keep the breakdown the user just generated as their default for the one-click report. */
+    protected function rememberGranularity(int $userId, string $granularity): void
+    {
+        if (in_array($granularity, self::GRANULARITIES, true)) {
+            $this->userMetadataModel->save($userId, [self::GRANULARITY_KEY => $granularity]);
+        }
     }
 
     /**
@@ -72,6 +84,7 @@ class TimeReportController extends BaseController
             'projects'          => $this->accessibleProjects($userId),
             'profiles'          => $this->aiProfiles(),
             'can_report_others' => $this->canReportOnAnyProject($userId),
+            'current_user_id'   => (int) $userId,
         ]));
     }
 
@@ -118,11 +131,18 @@ class TimeReportController extends BaseController
         $this->renderReport($report);
     }
 
-    /** Fixed quick defaults: this month to date, per task, no detail, no AI. Access-guarded by the model. */
+    /**
+     * Quick defaults: this month to date, the breakdown the user last generated (per
+     * task until they have), no detail, no AI. Access-guarded by the model.
+     */
     protected function quickReport(int $projectId, int $userId): array
     {
-        // report() already returns include_detail => false for the false argument above.
-        return $this->timeReportModel->report($projectId, date('Y-m-01'), date('Y-m-d'), 'task', false, $userId);
+        $granularity = (string) $this->userMetadataModel->get($userId, self::GRANULARITY_KEY, 'task');
+        if (! in_array($granularity, self::GRANULARITIES, true)) {
+            $granularity = 'task';
+        }
+
+        return $this->timeReportModel->report($projectId, date('Y-m-01'), date('Y-m-d'), $granularity, false, $userId);
     }
 
     /** The project id to pre-select in the form, or 0 when the requested id isn't in the user's accessible list. */
@@ -140,6 +160,7 @@ class TimeReportController extends BaseController
         // A CSV carries no on-screen notice, so a silently narrowed export would look
         // like a valid team invoice covering people it does not contain. Refuse it.
         if (! empty($report['scope_denied'])) {
+            $this->flash->failure(t('The CSV was not exported: you do not have permission to include other users in this project.'));
             $this->response->redirect($this->helper->url->to('TimeReportController', 'index', ['plugin' => 'TimeReport']));
             return;
         }
@@ -256,8 +277,7 @@ class TimeReportController extends BaseController
             return ['error' => t('Invalid summary request.')];
         }
 
-        $startDate = $this->validDate($values['start_date'] ?? '', date('Y-m-01'));
-        $endDate   = $this->validDate($values['end_date'] ?? '', date('Y-m-d'));
+        [$startDate, $endDate] = $this->dateRange($values);
         [$subjectUserIds, $allUsers] = $this->subjectSelection($values);
 
         // Access is enforced inside report(); detail on so subtasks/descriptions are present.
@@ -401,8 +421,7 @@ class TimeReportController extends BaseController
         $userId      = $this->userSession->getId();
         $values      = $this->request->getValues();
         $projectId   = (int) ($values['project_id'] ?? 0);
-        $startDate   = $this->validDate($values['start_date'] ?? '', date('Y-m-01'));
-        $endDate     = $this->validDate($values['end_date'] ?? '', date('Y-m-d'));
+        [$startDate, $endDate] = $this->dateRange($values);
         $granularity = in_array($values['granularity'] ?? '', self::GRANULARITIES, true) ? $values['granularity'] : 'day';
         $includeDetail = ! empty($values['include_detail']);
         $wantsAi       = ! empty($values['include_ai_summary']) && $this->isAiEnabled();
@@ -448,11 +467,33 @@ class TimeReportController extends BaseController
      */
     protected function subjectSelection(array $values): array
     {
+        $scope = (string) ($values['scope'] ?? '');
+
+        // An explicit "Just me" / "All users" choice wins over a user selection the same
+        // form is still carrying, or the filters could never leave a hand-picked subset.
+        if ($scope === 'all' || $scope === 'self') {
+            return [null, $scope === 'all'];
+        }
+
         if (! empty($values['user_ids']) && is_array($values['user_ids'])) {
             return [array_map('intval', $values['user_ids']), false];
         }
 
-        return [null, ($values['scope'] ?? '') === 'all'];
+        return [null, false];
+    }
+
+    /**
+     * The submitted range as [start, end] ISO dates. A reversed range is swapped: read
+     * literally it matches nothing, which looks like "no hours" rather than a typo.
+     *
+     * @return array{0:string,1:string}
+     */
+    protected function dateRange(array $values): array
+    {
+        $start = $this->validDate((string) ($values['start_date'] ?? ''), date('Y-m-01'));
+        $end   = $this->validDate((string) ($values['end_date'] ?? ''), date('Y-m-d'));
+
+        return $start <= $end ? [$start, $end] : [$end, $start];
     }
 
     /** AiGate delegate — overridable in tests. */

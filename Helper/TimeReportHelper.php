@@ -32,6 +32,27 @@ class TimeReportHelper extends Base
         return date('D', $ts) . ' ' . $date;
     }
 
+    /**
+     * Ready-made ranges for the report forms. Weeks run Monday to Sunday, matching the
+     * per-week breakdown.
+     *
+     * @return array<string, array{label:string,start:string,end:string}>
+     */
+    public function datePresets(?int $now = null): array
+    {
+        $now    = $now ?? time();
+        $monday = strtotime('monday this week', $now);
+        $first  = strtotime(date('Y-m-01', $now));
+        $range  = static fn (string $label, int $start, int $end): array => ['label' => $label, 'start' => date('Y-m-d', $start), 'end' => date('Y-m-d', $end)];
+
+        return [
+            'this_week'  => $range(t('This week'), $monday, strtotime('+6 days', $monday)),
+            'last_week'  => $range(t('Last week'), strtotime('-7 days', $monday), strtotime('-1 day', $monday)),
+            'this_month' => $range(t('This month'), $first, strtotime('last day of this month', $first)),
+            'last_month' => $range(t('Last month'), strtotime('first day of last month', $first), strtotime('last day of last month', $first)),
+        ];
+    }
+
     public function toMarkdown(array $report): string
     {
         $isTask = ($report['granularity'] ?? 'day') === 'task';

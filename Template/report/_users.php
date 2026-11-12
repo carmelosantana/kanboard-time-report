@@ -10,6 +10,12 @@
         <?php if (! empty($report['include_detail'])): ?>
             <input type="hidden" name="include_detail" value="1">
         <?php endif ?>
+        <?php if (! empty($report['ai'])): ?>
+            <input type="hidden" name="include_ai_summary" value="1">
+        <?php endif ?>
+        <?php if (! empty($report['profile_id'])): ?>
+            <input type="hidden" name="profile_id" value="<?= $this->text->e($report['profile_id']) ?>">
+        <?php endif ?>
 
         <ul class="tr-user-list">
             <?php $trSelected = array_map('intval', $report['subject_user_ids']); ?>

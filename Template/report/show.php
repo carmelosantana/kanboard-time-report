@@ -6,13 +6,28 @@ $trGranLabels = [
     'total' => t('Total only'),
     'user'  => t('By user'),
 ];
-$trScope = ! empty($report['multi_user']) ? 'all' : 'self';
+// Which scope the report covers: just the viewer, every participant, or a hand-picked
+// subset. A subset has to travel with the filters form or "Update" would drop it.
+$trSubject = array_map('intval', $report['subject_user_ids'] ?? []);
+$trEveryone = array_map('intval', array_keys($report['participants'] ?? []));
+if ($trSubject === [(int) ($current_user_id ?? 0)]) {
+    $trScope = 'self';
+} elseif ($trEveryone !== [] && array_diff($trEveryone, $trSubject) === []) {
+    $trScope = 'all';
+} else {
+    $trScope = 'selected';
+}
+$trScopeLabels = ['self' => t('Just me'), 'all' => t('All users')];
+if ($trScope === 'selected') {
+    $trScopeLabels['selected'] = t('Selected users (%d)', count($trSubject));
+}
 $trValues = [
     'project_id'  => $report['project_id'],
     'start_date'  => $report['start_date'],
     'end_date'    => $report['end_date'],
     'granularity' => $report['granularity'],
     'scope'       => $trScope,
+    'profile_id'  => $report['profile_id'] ?? '',
 ];
 $trExpandable = ! empty($ai_enabled) && in_array($report['granularity'], ['task', 'day', 'week'], true);
 $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']);
@@ -33,8 +48,8 @@ $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']
             <strong><?= $this->text->e($report['project_name']) ?></strong>
             &nbsp;·&nbsp; <?= $this->text->e($report['start_date']) ?> → <?= $this->text->e($report['end_date']) ?>
             &nbsp;·&nbsp; <?= $this->text->e($trGranLabels[$report['granularity']] ?? $report['granularity']) ?>
-            &nbsp;·&nbsp; <?= ! empty($report['multi_user']) ? t('All users') : t('Just me') ?>
-            <?php if (! empty($ai_enabled)): ?>&nbsp;·&nbsp; <span class="tr-controlbar-ai">+AI</span><?php endif ?>
+            &nbsp;·&nbsp; <?= $this->text->e($trScopeLabels[$trScope]) ?>
+            <?php if (! empty($report['ai'])): ?>&nbsp;·&nbsp; <span class="tr-controlbar-ai">+AI</span><?php endif ?>
             &nbsp;·&nbsp; <strong><?= t('Total hours') ?>:</strong>
             <span class="tr-copy-num" data-tr-copyval="<?= $this->text->e($trTotal) ?>" data-tr-copied="<?= t('Copied') ?>" role="button" tabindex="0" title="<?= t('Click to copy') ?>"><?= $this->text->e($trTotal) ?></span>
             <?php if (isset($report['xp']['total'])): ?>
@@ -52,13 +67,19 @@ $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']
 
         <?= $this->form->date(t('Start date'), 'start_date', $trValues, [], ['required']) ?>
         <?= $this->form->date(t('End date'), 'end_date', $trValues, [], ['required']) ?>
+        <?= $this->render('TimeReport:report/_presets') ?>
 
         <?= $this->form->label(t('Breakdown'), 'granularity') ?>
         <?= $this->form->select('granularity', $trGranLabels, $trValues) ?>
 
         <?php if (! empty($can_report_others)): ?>
             <?= $this->form->label(t('Include'), 'scope') ?>
-            <?= $this->form->select('scope', ['self' => t('Just me'), 'all' => t('All users')], $trValues) ?>
+            <?= $this->form->select('scope', $trScopeLabels, $trValues) ?>
+            <?php if ($trScope === 'selected'): ?>
+                <?php foreach ($trSubject as $trUid): ?>
+                    <input type="hidden" name="user_ids[]" value="<?= (int) $trUid ?>">
+                <?php endforeach ?>
+            <?php endif ?>
         <?php endif ?>
 
         <div class="tr-toggles">
@@ -67,7 +88,7 @@ $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']
                 <label><?= $this->form->checkbox('include_ai_summary', t('Add report-level AI summary'), 1, ! empty($report['ai'])) ?></label>
                 <?php if (! empty($profiles)): ?>
                     <?= $this->form->label(t('AI profile'), 'profile_id') ?>
-                    <?= $this->form->select('profile_id', array_column($profiles, 'label', 'id')) ?>
+                    <?= $this->form->select('profile_id', array_column($profiles, 'label', 'id'), $trValues) ?>
                 <?php endif ?>
             <?php endif ?>
         </div>

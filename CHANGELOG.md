@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Manual time is dated and counted.** Time typed into a subtask's "Time spent" field is now logged with who typed it and when (schema version 3, `timereport_manual_time`). It is counted on the day it was entered and only in reports whose range covers that day. Lowering the time takes it off the newest entry first.
+- **Tracked / Manual / Total columns** on every breakdown, in the page, Markdown and CSV, with a total row on the page. "Manual" also holds the completed-task total used when a task has no dated time.
+- Range shortcuts on both forms: This week, Last week, This month, Last month.
+- The one-click project report uses the breakdown you last generated.
+- Task rows link to the task.
+
+### Changed
+- **Reported totals now include dated manual time**, which was previously left out. TimeInvoice reads the same totals.
+- The "Untracked subtask time" notice is now "Undated manual time" and lists only manual time that predates this version (it has no entry date, so no range can include it). Clear and re-enter it on the subtask to date it.
+- A task with dated manual time is no longer also counted through its completed-task total.
+- CSV breakdown columns are now `Label, Tracked, Manual, Hours, Tasks`.
+
+### Fixed
+- "Edit filters → Update" dropped a hand-picked user selection and the AI profile; the Users panel dropped the AI summary.
+- A range with the dates reversed returned an empty report; the dates are now swapped.
+- An empty range rendered an empty table; it now says no hours were logged.
+- A `|` or line break in a task title broke the Markdown table.
+- A refused CSV export redirected without saying why.
+- The "+AI" badge showed whenever AI was installed rather than when the report had an AI summary.
+
 ## 1.5.0 — 2026-10-07
 
 ### Added

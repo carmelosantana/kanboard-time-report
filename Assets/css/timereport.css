@@ -48,3 +48,6 @@
     font-size: 0.75em; padding: 0.15em 0.5em;
     background: #b58900; color: #fff; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.03em;
 }
+
+.tr-presets { display: flex; gap: 0.4em; flex-wrap: wrap; margin: 0.4em 0 0.8em; }
+.tr-total-row th { border-top: 2px solid rgba(0,0,0,0.15); }

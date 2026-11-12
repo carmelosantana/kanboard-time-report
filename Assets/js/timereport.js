@@ -249,6 +249,21 @@
             return;
         }
 
+        // Range shortcut: fill the dates of the form the button sits in (ISO, which the
+        // server accepts whatever the user's date format is).
+        var presetBtn = e.target.closest("[data-tr-preset]");
+        if (presetBtn) {
+            e.preventDefault();
+            var presetForm = presetBtn.closest("form");
+            var startInput = presetForm ? presetForm.querySelector('[name="start_date"]') : null;
+            var endInput = presetForm ? presetForm.querySelector('[name="end_date"]') : null;
+            if (startInput && endInput) {
+                startInput.value = presetBtn.getAttribute("data-start");
+                endInput.value = presetBtn.getAttribute("data-end");
+            }
+            return;
+        }
+
         var genAllBtn = e.target.closest("[data-tr-generate-all]");
         if (genAllBtn) { e.preventDefault(); generateAll(genAllBtn); return; }
 
