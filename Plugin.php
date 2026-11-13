@@ -64,6 +64,7 @@ class Plugin extends Base
         $this->route->addRoute('timereport', 'TimeReportController', 'index', 'TimeReport');
         $this->route->addRoute('timereport/generate', 'TimeReportController', 'generate', 'TimeReport');
         $this->route->addRoute('timereport/export-csv', 'TimeReportController', 'exportCsv', 'TimeReport');
+        $this->route->addRoute('timereport/date-undated', 'TimeReportController', 'dateUndated', 'TimeReport');
         $this->route->addRoute('timereport/view', 'TimeReportController', 'view', 'TimeReport');
         $this->route->addRoute('timereport/row-summary', 'TimeReportController', 'rowSummary', 'TimeReport');
         $this->route->addRoute('timereport/tpb-dismiss', 'TimeReportController', 'dismissTpbNotice', 'TimeReport');
@@ -78,6 +79,9 @@ class Plugin extends Base
         // Governs whether task descriptions are gathered and forwarded to the AI
         // provider. Persisted via core ConfigController::save (redirect=integrations).
         $this->template->hook->attach('template:config:integrations', 'TimeReport:config/integrations');
+
+        // ── Per-user preference: first day of the week (My profile → Integrations) ──
+        $this->template->hook->attach('template:user:integrations', 'TimeReport:user/integrations');
 
         // ── Progress on board cards: a hook, never a board/task_footer override ──
         $this->template->hook->attach('template:board:task:footer', 'TimeReport:board/progress');
@@ -123,7 +127,7 @@ class Plugin extends Base
 
     public function getPluginVersion(): string
     {
-        return '1.6.1';
+        return '1.7.0';
     }
 
     public function getPluginHomepage(): string

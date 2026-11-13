@@ -25,8 +25,8 @@ if ($trScope === 'selected') {
 }
 $trValues = [
     'project_id'  => $report['project_id'],
-    'start_date'  => $report['start_date'],
-    'end_date'    => $report['end_date'],
+    'start_date'  => $this->helper->timeReport->fieldDate($report['start_date']),
+    'end_date'    => $this->helper->timeReport->fieldDate($report['end_date']),
     'granularity' => $report['granularity'],
     'scope'       => $trScope,
     'profile_id'  => $report['profile_id'] ?? '',
@@ -121,10 +121,6 @@ $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']
     </div>
 </div>
 
-<?php if (! empty($report['untracked']['task_count'])): ?>
-    <?= $this->render('TimeReport:report/_untracked', ['report' => $report]) ?>
-<?php endif ?>
-
 <?php if (! empty($report['participants']) && count($report['participants']) > 1): ?>
     <?= $this->render('TimeReport:report/_users', ['report' => $report]) ?>
 <?php endif ?>
@@ -152,6 +148,10 @@ $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']
         <?php endif ?>
         <p class="tr-ai-note"><?= t('AI-proposed — review before sharing.') ?></p>
     </div>
+<?php endif ?>
+
+<?php if (! empty($report['untracked']['task_count'])): ?>
+    <?= $this->render('TimeReport:report/_untracked', ['report' => $report, 'scope' => $trScope, 'subject' => $trSubject]) ?>
 <?php endif ?>
 
 <textarea id="tr-markdown" class="tr-hidden" readonly aria-hidden="true"><?= $this->text->e($markdown) ?></textarea>

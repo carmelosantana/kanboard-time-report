@@ -16,6 +16,9 @@ use Kanboard\Core\Security\Role;
  */
 class TimeReportModel extends Base
 {
+    /** User metadata key: first day of the week, '0' Sunday (default) or '1' Monday. */
+    public const WEEK_START_KEY = 'timereport_week_start';
+
     /**
      * Hours of one subtask_time_tracking row: the recorded figure, else end − start.
      * 0.0 for a timer that is still running.
@@ -233,18 +236,42 @@ class TimeReportModel extends Base
         return date('Y-m-d', $ts);
     }
 
-    /** ISO-8601 week key: <ISO-year>-W<2-digit ISO week>. */
-    public static function weekKey(int $ts): string
+    /** The first day of the user's week: 0 = Sunday (the default), 1 = Monday. */
+    public function weekStartFor(int $userId): int
     {
-        return date('o', $ts) . '-W' . date('W', $ts);
+        $saved = $userId > 0 ? (string) $this->userMetadataModel->get($userId, self::WEEK_START_KEY, '0') : '0';
+
+        return $saved === '1' ? 1 : 0;
     }
 
-    /** "Mon d – Sun d" span for the ISO week containing $ts. */
-    public static function weekLabel(int $ts): string
+    /** Midnight on the first day of the week containing $ts ($firstDay: 0 Sunday, 1 Monday). */
+    public static function weekStart(int $ts, int $firstDay = 1): int
     {
-        $monday = strtotime('monday this week', $ts);
-        $sunday = strtotime('sunday this week', $ts);
-        return date('M d', $monday) . ' – ' . date('M d', $sunday);
+        $daysIn = ((int) date('w', $ts) - $firstDay + 7) % 7;
+
+        return (int) strtotime(date('Y-m-d', $ts) . ' 00:00:00 -' . $daysIn . ' days');
+    }
+
+    /**
+     * Row key of the week containing $ts. Monday weeks keep the ISO-8601 key
+     * (<ISO-year>-W<week>) their cached summaries were stored under; Sunday weeks are
+     * keyed by their first day (W<YYYY-MM-DD>). Both sort chronologically.
+     */
+    public static function weekKey(int $ts, int $firstDay = 1): string
+    {
+        if ($firstDay === 1) {
+            return date('o', $ts) . '-W' . date('W', $ts);
+        }
+
+        return 'W' . date('Y-m-d', self::weekStart($ts, $firstDay));
+    }
+
+    /** "Nov 08 – Nov 14" span of the week containing $ts. */
+    public static function weekLabel(int $ts, int $firstDay = 1): string
+    {
+        $start = self::weekStart($ts, $firstDay);
+
+        return date('M d', $start) . ' – ' . date('M d', strtotime('+6 days', $start));
     }
 
     /**
@@ -255,7 +282,7 @@ class TimeReportModel extends Base
      * @param  array<int,array{name:string}>                    $userMeta
      * @return array{total_hours:float, tracked_hours:float, manual_hours:float, breakdown: list<array{key:string,label:string,hours:float,tracked_hours:float,manual_hours:float,task_count:int}>}
      */
-    public static function bucket(array $contributions, string $granularity, array $taskMeta = [], array $userMeta = []): array
+    public static function bucket(array $contributions, string $granularity, array $taskMeta = [], array $userMeta = [], int $weekStart = 1): array
     {
         $buckets = []; // key => ['label'=>, 'hours'=>, 'tasks'=>[id=>true], 'sort'=>]
         $total = 0.0;
@@ -271,8 +298,8 @@ class TimeReportModel extends Base
 
             switch ($granularity) {
                 case 'week':
-                    $key   = self::weekKey($ts);
-                    $label = self::weekLabel($ts);
+                    $key   = self::weekKey($ts, $weekStart);
+                    $label = self::weekLabel($ts, $weekStart);
                     $sort  = $key;
                     break;
                 case 'task':
@@ -635,7 +662,8 @@ class TimeReportModel extends Base
             $userMeta[$uid] = ['name' => $name];
         }
 
-        $bucketed = self::bucket($contributions, $granularity, $taskMeta, $userMeta);
+        $weekStart = $this->weekStartFor($userId);
+        $bucketed = self::bucket($contributions, $granularity, $taskMeta, $userMeta, $weekStart);
 
         $perUser = self::hoursByUser($contributions);
         $users   = [];
@@ -684,6 +712,7 @@ class TimeReportModel extends Base
             // The granted "every participant" intent, kept even when nobody has hours
             // in range and the subject set therefore fell back to the requester.
             'all_users'         => $allUsers && $canReportOthers,
+            'week_start'        => $weekStart,
             'can_report_others' => $canReportOthers,
             'scope_denied'      => $scopeDenied,
         ];

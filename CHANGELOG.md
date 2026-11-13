@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.7.0 — 2026-11-13
+
+### Added
+- **Date undated manual time from the report.** In the "Undated manual time" panel, tick tasks, choose a date and press **Apply date**: their undated time is reported on that day from then on. A project member can date their own subtasks; a project manager or admin can date anyone's.
+- **Week start preference** on *My profile → Integrations*: Sunday (the default) or Monday. It drives the "This week" / "Last week" shortcuts and the per-week breakdown, and TimeInvoice's per-week lines follow it.
+
+### Changed
+- **Weeks now run Sunday to Saturday by default** (they ran Monday to Sunday). Choose Monday in the preference above to keep the old weeks.
+- **"Undated manual time" moved below the report and is collapsed** to one line; click it to open the list.
+- The date fields and the range shortcuts now use Kanboard's date format, the same one the calendar writes, so the calendar opens on the selected date. ISO dates are still accepted.
+
+### Notes
+- Per-week AI row summaries cached under Monday weeks are not reused for Sunday weeks; they are generated again on first open.
+
 ## 1.6.1 — 2026-11-12
 
 ### Fixed

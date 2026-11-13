@@ -2,6 +2,10 @@
     <h2><?= t('Time Report') ?></h2>
 </div>
 
+<?php
+$values['start_date'] = $this->helper->timeReport->fieldDate((string) ($values['start_date'] ?? ''));
+$values['end_date']   = $this->helper->timeReport->fieldDate((string) ($values['end_date'] ?? ''));
+?>
 <form method="post" action="<?= $this->url->href('TimeReportController', 'generate', ['plugin' => 'TimeReport']) ?>" autocomplete="off">
     <?= $this->form->csrf() ?>
 

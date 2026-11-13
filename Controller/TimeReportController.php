@@ -6,6 +6,7 @@ use Kanboard\Controller\BaseController;
 use Kanboard\Core\Controller\AccessForbiddenException;
 use Kanboard\Plugin\TimeReport\Model\AiGate;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
+use Kanboard\Plugin\TimeReport\Model\ManualTimeLog;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
 
 /**
@@ -218,6 +219,50 @@ class TimeReportController extends BaseController
     protected function prefillProjectId(int $requested, array $projects): int
     {
         return ($requested > 0 && isset($projects[$requested])) ? $requested : 0;
+    }
+
+    /**
+     * POST: give the ticked tasks' undated manual time an entry date, then return to
+     * the report it was sent from.
+     */
+    public function dateUndated(): void
+    {
+        $this->checkCSRFForm();
+        $values = $this->request->getValues();
+        $hours  = $this->dateUndatedFromValues($values, $this->userSession->getId());
+
+        if ($hours === null) {
+            $this->flash->failure(t('Tick at least one task and choose a date.'));
+        } elseif ($hours < 0.01) {
+            $this->flash->failure(t('No undated time was found on the selected tasks.'));
+        } else {
+            $this->flash->success(t('%sh of undated time is now dated %s.', $this->helper->timeReport->formatHours($hours), $this->helper->timeReport->fieldDate($this->validDate((string) $values['entered_date'], ''))));
+        }
+
+        $this->response->redirect($this->reportUrl($values));
+    }
+
+    /**
+     * Date the undated manual time of $values['task_ids'] on $values['entered_date'].
+     * A member dates only their own subtasks; whoever may report on others dates all.
+     *
+     * @return ?float hours dated, or null when no task or no valid date was given
+     */
+    protected function dateUndatedFromValues(array $values, int $userId): ?float
+    {
+        $projectId = (int) ($values['project_id'] ?? 0);
+        $this->timeReportModel->assertProjectAccess($projectId, $userId);
+
+        $date    = $this->validDate((string) ($values['entered_date'] ?? ''), '');
+        $taskIds = is_array($values['task_ids'] ?? null) ? $values['task_ids'] : [];
+        if ($date === '' || $taskIds === []) {
+            return null;
+        }
+
+        $ownUserId = $this->timeReportModel->canReportOnOthers($projectId, $userId) ? null : $userId;
+
+        // Noon: the entry stays on the chosen day whatever the timezone offset.
+        return (new ManualTimeLog($this->container))->dateUndated($projectId, $taskIds, (int) strtotime($date . ' 12:00:00'), $ownUserId);
     }
 
     /** Same params, streamed as a CSV download. */

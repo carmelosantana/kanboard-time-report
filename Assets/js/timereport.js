@@ -252,8 +252,17 @@
             return;
         }
 
-        // Range shortcut: fill the dates of the form the button sits in (ISO, which the
-        // server accepts whatever the user's date format is).
+        // Undated time: the header checkbox ticks or clears every task in its table.
+        var checkAll = e.target.closest("[data-tr-check-all]");
+        if (checkAll) {
+            var checkTable = checkAll.closest("table");
+            var boxes = checkTable ? checkTable.querySelectorAll('input[name="task_ids[]"]') : [];
+            for (var b = 0; b < boxes.length; b++) { boxes[b].checked = checkAll.checked; }
+            return;
+        }
+
+        // Range shortcut: fill the dates of the form the button sits in, in the format
+        // the calendar writes (the server rendered them that way).
         var presetBtn = e.target.closest("[data-tr-preset]");
         if (presetBtn) {
             e.preventDefault();

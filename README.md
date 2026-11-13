@@ -28,7 +28,11 @@ Kanboard keeps no date for time typed into a subtask's "Time spent" field, so th
 
 Manual time is dated when Kanboard processes the subtask change. On a default install that is immediate. With a background queue worker it is when the worker runs the job, so edits queued across midnight can land on the next day, and several queued edits to one subtask are logged by the first job to run.
 
-Manual time typed before 1.6.0 has no entry date. It is listed in an "Undated manual time" notice and is only counted once its task is completed (on the completion date, if the task has no timer-tracked time); clear it on the subtask and enter it again to date it.
+Manual time typed before 1.6.0 has no entry date. It is listed in a collapsed "Undated manual time" panel below the report and is only counted once its task is completed (on the completion date, if the task has no timer-tracked time). To report it on a day of your choice, open the panel, tick the tasks, choose a date and press **Apply date**. Members can date their own subtasks; project managers and admins can date anyone's.
+
+### Weeks
+
+Weeks run Sunday to Saturday. To use Monday to Sunday, set **Week starts on** at *My profile → Integrations*. The setting is per user and drives the "This week" / "Last week" shortcuts and the per-week breakdown.
 
 ## AI Optional — Degrades Gracefully
 

@@ -5,6 +5,7 @@ namespace Kanboard\Plugin\TimeReport\Model;
 use Kanboard\Core\Base;
 use Kanboard\Model\SubtaskModel;
 use Kanboard\Model\SubtaskTimeTrackingModel;
+use Kanboard\Model\TaskModel;
 
 /**
  * Dates time typed into a subtask's "Time spent" field (core keeps only the total).
@@ -42,6 +43,42 @@ class ManualTimeLog extends Base
         if ($ownsTransaction) {
             $this->db->closeTransaction();
         }
+    }
+
+    /**
+     * Give the undated manual time of the chosen tasks an entry date, so it is reported
+     * on that day. Only ledger rows with no date are touched, and only on tasks of
+     * $projectId; $ownUserId limits it to that person's subtasks.
+     *
+     * @param  int[] $taskIds
+     * @return float the hours that were dated
+     */
+    public function dateUndated(int $projectId, array $taskIds, int $enteredAt, ?int $ownUserId = null): float
+    {
+        $taskIds = array_values(array_unique(array_filter(array_map('intval', $taskIds))));
+        if ($taskIds === [] || $enteredAt <= 0) {
+            return 0.0;
+        }
+
+        $query = $this->db->table(self::TABLE)
+            ->columns(self::TABLE . '.id', self::TABLE . '.hours')
+            ->join(SubtaskModel::TABLE, 'id', 'subtask_id')
+            ->join(TaskModel::TABLE, 'id', 'task_id', SubtaskModel::TABLE)
+            ->eq(self::TABLE . '.entered_at', 0)
+            ->eq(TaskModel::TABLE . '.project_id', $projectId)
+            ->in(SubtaskModel::TABLE . '.task_id', $taskIds);
+        if ($ownUserId !== null) {
+            $query->eq(SubtaskModel::TABLE . '.user_id', $ownUserId);
+        }
+
+        $rows = $query->findAll();
+        if ($rows === []) {
+            return 0.0;
+        }
+
+        $this->db->table(self::TABLE)->in('id', array_column($rows, 'id'))->update(['entered_at' => $enteredAt]);
+
+        return round(array_sum(array_map(static fn ($r) => (float) $r['hours'], $rows)), 2);
     }
 
     private function reconcile(int $subtaskId, int $userId, int $now): void

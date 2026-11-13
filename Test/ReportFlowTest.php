@@ -151,12 +151,10 @@ class ReportFlowTest extends Base
 
     // ── Ranges ───────────────────────────────────────────────────────────────
 
-    public function testDatePresetsCoverWeeksAndMonthsAroundToday(): void
+    public function testDatePresetsCoverTheMonthsAroundToday(): void
     {
         $presets = (new TimeReportHelper($this->container))->datePresets(strtotime('2026-11-12 15:00:00')); // a Thursday
 
-        $this->assertSame(['2026-11-09', '2026-11-15'], [$presets['this_week']['start'], $presets['this_week']['end']]);
-        $this->assertSame(['2026-11-02', '2026-11-08'], [$presets['last_week']['start'], $presets['last_week']['end']]);
         $this->assertSame(['2026-11-01', '2026-11-30'], [$presets['this_month']['start'], $presets['this_month']['end']]);
         $this->assertSame(['2026-10-01', '2026-10-31'], [$presets['last_month']['start'], $presets['last_month']['end']]);
     }
@@ -169,7 +167,7 @@ class ReportFlowTest extends Base
         ]);
 
         foreach ([$form, $this->filtersForm($this->show($this->report()))] as $html) {
-            $this->assertSame(4, preg_match_all('#<button type="button"[^>]*data-tr-preset[^>]*data-start="\d{4}-\d\d-\d\d"[^>]*data-end="\d{4}-\d\d-\d\d"#', $html));
+            $this->assertSame(4, preg_match_all('#<button type="button"[^>]*data-tr-preset[^>]*data-start="[^"]+"[^>]*data-end="[^"]+"#', $html));
         }
     }
 

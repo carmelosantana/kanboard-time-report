@@ -3,6 +3,7 @@
 namespace Kanboard\Plugin\TimeReport\Helper;
 
 use Kanboard\Core\Base;
+use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
 
 /**
  * TimeReportHelper — renders one report aggregate to hours / Markdown / CSV.
@@ -32,25 +33,40 @@ class TimeReportHelper extends Base
         return date('D', $ts) . ' ' . $date;
     }
 
+    /** An ISO date as the date fields show it: the format Kanboard's calendar writes. */
+    public function fieldDate(string $isoDate): string
+    {
+        $ts = strtotime($isoDate . ' 12:00:00');
+
+        return $ts === false ? $isoDate : date($this->dateParser->getUserDateFormat(), $ts);
+    }
+
     /**
-     * Ready-made ranges for the report forms. Weeks run Monday to Sunday, matching the
-     * per-week breakdown.
+     * Ready-made ranges for the report forms, as ISO dates. Weeks start on the viewer's
+     * first day of the week (Sunday unless they chose Monday), matching the per-week
+     * breakdown.
      *
      * @return array<string, array{label:string,start:string,end:string}>
      */
     public function datePresets(?int $now = null): array
     {
-        $now    = $now ?? time();
-        $monday = strtotime('monday this week', $now);
-        $first  = strtotime(date('Y-m-01', $now));
-        $range  = static fn (string $label, int $start, int $end): array => ['label' => $label, 'start' => date('Y-m-d', $start), 'end' => date('Y-m-d', $end)];
+        $now   = $now ?? time();
+        $week  = TimeReportModel::weekStart($now, $this->weekStart());
+        $first = strtotime(date('Y-m-01', $now));
+        $range = static fn (string $label, int $start, int $end): array => ['label' => $label, 'start' => date('Y-m-d', $start), 'end' => date('Y-m-d', $end)];
 
         return [
-            'this_week'  => $range(t('This week'), $monday, strtotime('+6 days', $monday)),
-            'last_week'  => $range(t('Last week'), strtotime('-7 days', $monday), strtotime('-1 day', $monday)),
+            'this_week'  => $range(t('This week'), $week, strtotime('+6 days', $week)),
+            'last_week'  => $range(t('Last week'), strtotime('-7 days', $week), strtotime('-1 day', $week)),
             'this_month' => $range(t('This month'), $first, strtotime('last day of this month', $first)),
             'last_month' => $range(t('Last month'), strtotime('first day of last month', $first), strtotime('last day of last month', $first)),
         ];
+    }
+
+    /** The viewer's first day of the week: 0 Sunday, 1 Monday. */
+    public function weekStart(): int
+    {
+        return (new TimeReportModel($this->container))->weekStartFor((int) $this->userSession->getId());
     }
 
     public function toMarkdown(array $report): string

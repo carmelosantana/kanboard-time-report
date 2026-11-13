@@ -1,7 +1,7 @@
 {
     "name": "TimeReport",
     "description": "Consultant hours reporting plus progress: subtask and time meters on board cards, project and milestone progress, and XP with levels. Pick a project and date range, choose breakdowns, optionally add an AI summary, copy as Markdown or export CSV.",
-    "version": "1.6.1",
+    "version": "1.7.0",
     "author": "Carmelo Santana",
     "license": "MIT",
     "homepage": "https://github.com/carmelosantana/kanboard-time-report",
