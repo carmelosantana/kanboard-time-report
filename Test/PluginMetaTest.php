@@ -13,7 +13,7 @@ class PluginMetaTest extends Base
 
     public function testVersionIsExactly161(): void
     {
-        $this->assertSame('1.6.1', $this->json()['version']);
+        $this->assertSame('1.7.0', $this->json()['version']);
     }
 
     /** tag == version across the three files the CI checks (plugin.json, Plugin.php, CHANGELOG). */
