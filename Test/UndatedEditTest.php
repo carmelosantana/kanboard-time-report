@@ -119,6 +119,12 @@ class UndatedEditTest extends Base
         $this->assertSame([$a => strtotime('2026-10-05 12:00:00')], $this->enteredAt());
     }
 
+    public function testTheConfirmationNamesTheDayInTheFieldFormat(): void
+    {
+        $src = file_get_contents(dirname(__DIR__) . '/Controller/TimeReportController.php');
+        $this->assertMatchesRegularExpression('/is now dated %s.*?fieldDate\(/s', $src);
+    }
+
     public function testTheActionRejectsAMissingDateOrNoTasks(): void
     {
         $a = $this->manualTask(3.0);
@@ -184,7 +190,7 @@ class UndatedEditTest extends Base
                 'project_id' => 5, 'project_name' => 'Acme', 'start_date' => '2026-03-01', 'end_date' => '2026-03-31',
                 'granularity' => 'day', 'total_hours' => 0.0, 'tracked_hours' => 0.0, 'manual_hours' => 0.0,
                 'breakdown' => [['key' => '2026-03-02', 'label' => '2026-03-02', 'hours' => 1.0, 'tracked_hours' => 1.0, 'manual_hours' => 0.0, 'task_count' => 1, 'task_ids' => [7]]],
-                'include_detail' => false, 'detail' => [], 'ai' => null, 'profile_id' => '',
+                'include_detail' => false, 'detail' => [], 'ai' => null, 'profile_id' => 'deep',
                 'subject_user_ids' => [1], 'users' => [], 'participants' => [], 'multi_user' => false,
                 'can_report_others' => true, 'scope_denied' => false, 'untracked' => $untracked,
             ],
@@ -219,6 +225,7 @@ class UndatedEditTest extends Base
         $this->assertMatchesRegularExpression('#name="entered_date"[^>]*class="[^"]*form-date#', $panel);
         $this->assertStringContainsString('name="project_id" value="5"', $panel);
         $this->assertStringContainsString('name="start_date" value="2026-03-01"', $panel, 'returns to the same report');
+        $this->assertStringContainsString('name="profile_id" value="deep"', $panel, 'keeps the chosen AI profile');
         $this->assertStringContainsString('type="submit"', $panel);
     }
 

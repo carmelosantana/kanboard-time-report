@@ -27,6 +27,7 @@ $trHours = $this->helper->timeReport;
         <input type="hidden" name="end_date" value="<?= $this->text->e($report['end_date']) ?>">
         <input type="hidden" name="granularity" value="<?= $this->text->e($report['granularity']) ?>">
         <?php if (! empty($report['include_detail'])): ?><input type="hidden" name="include_detail" value="1"><?php endif ?>
+        <?php if (! empty($report['profile_id'])): ?><input type="hidden" name="profile_id" value="<?= $this->text->e($report['profile_id']) ?>"><?php endif ?>
         <?php if (($scope ?? 'self') === 'selected'): ?>
             <?php foreach ($subject ?? [] as $trUid): ?>
                 <input type="hidden" name="user_ids[]" value="<?= (int) $trUid ?>">

@@ -236,7 +236,7 @@ class TimeReportController extends BaseController
         } elseif ($hours < 0.01) {
             $this->flash->failure(t('No undated time was found on the selected tasks.'));
         } else {
-            $this->flash->success(t('%sh of undated time is now dated %s.', $this->helper->timeReport->formatHours($hours), $this->validDate((string) $values['entered_date'], '')));
+            $this->flash->success(t('%sh of undated time is now dated %s.', $this->helper->timeReport->formatHours($hours), $this->helper->timeReport->fieldDate($this->validDate((string) $values['entered_date'], ''))));
         }
 
         $this->response->redirect($this->reportUrl($values));
