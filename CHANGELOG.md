@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.2 — 2026-11-17
+
+### Fixed
+- CSV exports escape values that a spreadsheet would read as a formula.
+
 ## 1.7.1 — 2026-11-17
 
 ### Fixed
