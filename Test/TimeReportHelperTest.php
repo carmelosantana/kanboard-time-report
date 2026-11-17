@@ -107,6 +107,35 @@ class TimeReportHelperTest extends Base
         $this->assertStringContainsString('backend; urgent', $csv);
     }
 
+    public function testCsvNeutralisesSpreadsheetFormulas(): void
+    {
+        $report = $this->sampleReport(true);
+        $report['project_name'] = '=SUM(A1:A2)';
+        $report['detail'][0]['title'] = '+cmd';
+        $report['detail'][0]['category'] = '@calc';
+        $report['detail'][0]['tags'] = ["\tx"];
+        $report['detail'][0]['reference'] = '-2+3';
+        $csv = $this->helper()->toCsv($report);
+
+        $this->assertStringContainsString("# Time Report,'=SUM(A1:A2)", $csv);
+        $this->assertStringContainsString("'+cmd", $csv);
+        $this->assertStringContainsString("'@calc", $csv);
+        $this->assertStringContainsString("'\tx", $csv);
+        $this->assertStringContainsString("'-2+3", $csv);
+        $this->assertStringNotContainsString(',=SUM', $csv);
+    }
+
+    public function testCsvFormulaPrefixStillQuotesAndKeepsNumbers(): void
+    {
+        $report = $this->sampleReport(true);
+        $report['detail'][0]['title'] = '=HYPERLINK("x","y")';
+        $report['breakdown'][0]['label'] = '-1.5';
+        $csv = $this->helper()->toCsv($report);
+
+        $this->assertStringContainsString('"\'=HYPERLINK(""x"",""y"")"', $csv);
+        $this->assertStringContainsString("\n-1.5,", $csv, 'a plain negative number stays a number');
+    }
+
     public function testCsvTaskGranularityAddsTasksColumn(): void
     {
         $report = $this->sampleReport();
