@@ -1,9 +1,9 @@
 <?php
-/** Two TimeReport entry links in the project ≡ menu (hook template:project:dropdown; core passes $project). */
+/**
+ * The TimeReport entry in the project ≡ menu (hook template:project:dropdown; core passes $project).
+ * One link: this project's report for this month. Its filters change in place ("Edit filters").
+ */
 ?>
 <li>
-    <?= $this->url->icon('bolt', t('Generate report'), 'TimeReportController', 'view', ['plugin' => 'TimeReport', 'project_id' => $project['id']]) ?>
-</li>
-<li>
-    <?= $this->url->icon('clock-o', t('Time Report'), 'TimeReportController', 'index', ['plugin' => 'TimeReport', 'project_id' => $project['id']]) ?>
+    <?= $this->url->icon('clock-o', t('Time Report'), 'TimeReportController', 'view', ['plugin' => 'TimeReport', 'project_id' => $project['id']]) ?>
 </li>

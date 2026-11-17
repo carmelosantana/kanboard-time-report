@@ -72,14 +72,30 @@ class TemplateAssetsTest extends Base
         $this->assertStringContainsString('querySelector(".tr-copy-badge")', $js, 'badge must be deduped before append');
     }
 
-    public function testProjectMenuPartialLinksBothEntries(): void
+    public function testProjectMenuHasOneClearEntry(): void
     {
         $src = file_get_contents(dirname(__DIR__) . '/Template/project/menu.php');
         $this->assertStringNotContainsString('<script', $src, 'menu partial must not contain inline <script> (CSP)');
         $this->assertDoesNotMatchRegularExpression('/\son[a-z]+\s*=\s*["\']/i', $src, 'menu partial must not contain inline on* handlers (CSP)');
-        $this->assertStringContainsString("'view'", $src, 'menu must link the quick view action');
-        $this->assertStringContainsString("'index'", $src, 'menu must link the report form');
-        $this->assertStringContainsString("project['id']", $src, 'menu links must carry the project id');
+        $this->assertSame(1, substr_count($src, '<li'), 'one entry: two near-identical links confused users');
+        $this->assertStringContainsString("'view'", $src, 'the entry opens this project\'s report');
+        $this->assertStringContainsString("t('Time Report')", $src, 'same name as the header entry');
+        $this->assertStringNotContainsString('Generate report', $src);
+        $this->assertStringContainsString("project['id']", $src, 'menu link must carry the project id');
+    }
+
+    public function testMenuEntriesRenderWorkingLinks(): void
+    {
+        $tpl = $this->container['template'];
+        $project = $tpl->render('TimeReport:project/menu', ['project' => ['id' => 7]]);
+        $header  = $tpl->render('TimeReport:report/header_dropdown', []);
+
+        preg_match_all('/href="([^"]+)"/', $project . $header, $m);
+        $this->assertCount(2, $m[1]);
+        $this->assertMatchesRegularExpression('/(action=view.*project_id=7|timereport\/view.*project_id=7)/', html_entity_decode($m[1][0]));
+        $this->assertMatchesRegularExpression('/(action=index|\/timereport)/', html_entity_decode($m[1][1]));
+        $this->assertStringContainsString('Time Report', strip_tags($project));
+        $this->assertStringContainsString('Time Report', strip_tags($header));
     }
 
     public function testPluginWiresProjectMenuAndViewRoute(): void
