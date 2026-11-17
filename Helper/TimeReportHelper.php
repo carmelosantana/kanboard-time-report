@@ -235,8 +235,15 @@ class TimeReportHelper extends Base
         return implode(',', array_map([$this, 'csvField'], $fields));
     }
 
+    /**
+     * One CSV cell. A value a spreadsheet would read as a formula (leading
+     * = + - @ tab or CR) gets a leading apostrophe, except plain numbers.
+     */
     private function csvField(string $value): string
     {
+        if (preg_match('/^[=+\-@\t\r]/', $value) && ! preg_match('/^[+-]?\d+(\.\d+)?$/', $value)) {
+            $value = "'" . $value;
+        }
         if (preg_match('/[",\r\n]/', $value)) {
             return '"' . str_replace('"', '""', $value) . '"';
         }
