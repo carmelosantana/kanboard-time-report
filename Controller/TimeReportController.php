@@ -27,6 +27,9 @@ class TimeReportController extends BaseController
     /** @var array<int, array<int,string>> accessibleProjects() per user, for this request. */
     private array $projectsByUser = [];
 
+    /** @var ?array requestValues() for this request. */
+    private ?array $requestValues = null;
+
     /** The report form: project picker, range inputs, toggles. */
     public function index(): void
     {
@@ -66,7 +69,7 @@ class TimeReportController extends BaseController
     {
         if ($this->request->isPost()) {
             $this->checkCSRFForm();
-            $values = $this->request->getValues();
+            $values = $this->requestValues();
             $this->rememberGranularity($this->userSession->getId(), (string) ($values['granularity'] ?? ''));
 
             if (empty($values['include_ai_summary']) || ! $this->isAiEnabled()) {
@@ -78,16 +81,24 @@ class TimeReportController extends BaseController
         $this->renderReport($this->buildReportFromRequest());
     }
 
-    /** The submitted report parameters: the form body on POST, the query string on GET. */
+    /**
+     * The submitted report parameters: the form body on POST, the query string on GET.
+     *
+     * Read once per request: core's Request::getValues() removes csrf_token as it
+     * validates it, so a second call returns an empty array (project 0 → Forbidden).
+     */
     protected function requestValues(): array
     {
-        if ($this->request->isPost()) {
-            return $this->request->getValues();
+        if ($this->requestValues === null) {
+            if ($this->request->isPost()) {
+                $this->requestValues = $this->request->getValues();
+            } else {
+                parse_str((string) $this->request->getQueryString(), $values);
+                $this->requestValues = $values;
+            }
         }
 
-        parse_str((string) $this->request->getQueryString(), $values);
-
-        return $values;
+        return $this->requestValues;
     }
 
     /**
