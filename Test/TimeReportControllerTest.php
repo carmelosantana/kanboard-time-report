@@ -137,6 +137,53 @@ class TimeReportControllerTest extends Base
         $this->assertFalse($report['include_detail'], 'display intent preserved: user did not request the detail listing');
     }
 
+    /**
+     * Regression: a POST that asks for the report-level AI summary is rendered from the
+     * POST itself. Core's Request::getValues() strips csrf_token on its first call, so a
+     * second call returned [] — project 0, which the access guard answers with Forbidden.
+     * Every re-post from a report that had an AI summary (Users panel, Edit filters →
+     * All users) hit it.
+     */
+    public function testAiSummaryPostReportsOnTheSubmittedProject(): void
+    {
+        $fakeModel = new class($this->container) extends \Kanboard\Plugin\TimeReport\Model\TimeReportModel {
+            public array $args = [];
+            public function report(int $projectId, string $startDate, string $endDate, string $granularity, bool $includeDetail, int $userId, ?array $subjectUserIds = null, bool $allUsers = false): array
+            {
+                $this->args = [$projectId, $startDate, $endDate, $granularity, $allUsers];
+                return ['project_id' => $projectId, 'detail' => [], 'ai' => null];
+            }
+        };
+        $this->container['timeReportModel'] = fn ($c) => $fakeModel;
+        $this->container['aiSummaryModel'] = fn ($c) => new class($c) extends \Kanboard\Plugin\TimeReport\Model\AiSummaryModel {
+            public function summarize(array $detailTasks, ?string $profileId = null): array
+            {
+                return ['summary' => 'canned', 'highlights' => []];
+            }
+        };
+
+        $this->container['request'] = new \Kanboard\Core\Http\Request($this->container, ['REQUEST_METHOD' => 'POST'], [], [
+            'csrf_token'         => $this->container['token']->getCSRFToken(),
+            'project_id'         => '5',
+            'start_date'         => '2026-03-01',
+            'end_date'           => '2026-03-31',
+            'granularity'        => 'user',
+            'scope'              => 'all',
+            'include_ai_summary' => '1',
+        ]);
+
+        $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
+            public ?array $rendered = null;
+            protected function isAiEnabled(): bool { return true; }
+            protected function renderReport(array $report): void { $this->rendered = $report; }
+        };
+
+        $controller->generate();
+
+        $this->assertSame([5, '2026-03-01', '2026-03-31', 'user', true], $fakeModel->args, 'the AI report must use the submitted filters');
+        $this->assertSame('canned', $controller->rendered['ai']['summary'] ?? null);
+    }
+
     public function testQuickReportDefaultsToThisMonthPerTaskNoDetail(): void
     {
         $projectId = (int) $this->container['projectModel']->create(['name' => 'Acme'], 1, true);

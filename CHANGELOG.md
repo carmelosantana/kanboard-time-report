@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.1 — 2026-11-17
+
+### Fixed
+- **"Forbidden" after a report with an AI summary.** Changing users in the Users panel, or switching to "All users" in Edit filters, on a report that had a report-level AI summary answered Forbidden: the form values were read twice and the second read came back empty. They are now read once.
+
+### Changed
+- **One "Time Report" entry in the project ≡ menu.** "Generate report" and "Time Report" sat side by side and were hard to tell apart. The single entry opens the project's report for this month; change its range, breakdown or users with **Edit filters**. The header menu's "Time Report" still opens the report form.
+
 ## 1.7.0 — 2026-11-13
 
 ### Added
