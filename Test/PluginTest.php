@@ -24,11 +24,10 @@ class PluginTest extends Base
         $this->assertFalse($handler->executeProcedure('getXpLeaderboard', ['project_id' => 99999]));
     }
 
-    public function testMetadataVersionIs150(): void
+    public function testMetadata(): void
     {
         $plugin = new Plugin($this->container);
         $this->assertSame('TimeReport', $plugin->getPluginName());
-        $this->assertSame('1.7.2', $plugin->getPluginVersion());
         $this->assertSame('Carmelo Santana', $plugin->getPluginAuthor());
         $this->assertSame('>=1.2.47', $plugin->getCompatibleVersion());
         $this->assertNotEmpty($plugin->getPluginDescription());
@@ -40,7 +39,6 @@ class PluginTest extends Base
         $json = json_decode(file_get_contents(dirname(__DIR__) . '/plugin.json'), true);
         $plugin = new Plugin($this->container);
         $this->assertSame($json['version'], $plugin->getPluginVersion(), 'Plugin.php version must equal plugin.json version');
-        $this->assertSame('1.7.2', $json['version']);
     }
 
     public function testPluginJsonRecommendsAgentsForPartyXp(): void
