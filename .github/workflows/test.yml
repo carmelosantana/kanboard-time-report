@@ -1,0 +1,13 @@
+# Runs this plugin's PHPUnit suite against Kanboard v1.2.47 on every PR and push to main.
+# Managed from carmelosantana/kanboard-plugins (templates/workflows/); update it with
+# scripts/sync-workflows.sh there rather than by hand.
+name: test
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    uses: carmelosantana/kanboard-plugins/.github/workflows/plugin-test.yml@0d9593992f9da272425988775c1c70639e0aaa7b # harness 2026-11-18
