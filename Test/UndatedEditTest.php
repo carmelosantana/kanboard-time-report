@@ -40,6 +40,15 @@ class UndatedEditTest extends Base
         return $taskId;
     }
 
+    /** Undated manual time logged by $loggerId on a subtask now assigned to $assigneeId. */
+    private function reassignedTask(float $hours, int $loggerId, int $assigneeId): int
+    {
+        $taskId = $this->manualTask($hours, '', $loggerId);
+        $this->container['db']->table('subtasks')->eq('task_id', $taskId)->update(['user_id' => $assigneeId]);
+
+        return $taskId;
+    }
+
     /** @return array<int,int> task id => entered_at of its ledger row */
     private function enteredAt(): array
     {
@@ -107,6 +116,21 @@ class UndatedEditTest extends Base
         $this->assertSame([$mine => 0, $his => $when], $this->enteredAt());
     }
 
+    public function testDatingForOnePersonFollowsWhoLoggedTheTimeNotTheSubtaskAssignee(): void
+    {
+        $alice = $this->user('alice');
+        $bob   = $this->user('bob');
+        $hers  = $this->reassignedTask(3.5, $alice, $bob);
+        $when  = strtotime('2026-10-05 12:00:00');
+        $log   = new ManualTimeLog($this->container);
+
+        $this->assertSame(0.0, $log->dateUndated($this->projectId, [$hers], $when, $bob), 'the new assignee cannot date it');
+        $this->assertSame([$hers => 0], $this->enteredAt());
+
+        $this->assertSame(3.5, $log->dateUndated($this->projectId, [$hers], $when, $alice), 'the logger still can');
+        $this->assertSame([$hers => $when], $this->enteredAt());
+    }
+
     // ── The action ───────────────────────────────────────────────────────────
 
     public function testTheActionDatesTimeAtNoonOfTheChosenDayInAnyAcceptedFormat(): void
@@ -158,6 +182,67 @@ class UndatedEditTest extends Base
 
         $this->assertSame(2.0, $hours);
         $this->assertSame(0, $this->enteredAt()[$mine]);
+    }
+
+    public function testAMemberCannotDateAnotherUsersTimeOnASubtaskNowAssignedToThem(): void
+    {
+        $alice = $this->user('alice');
+        $bob   = $this->user('bob');
+        $this->container['projectUserRoleModel']->addUser($this->projectId, $alice, 'project-member');
+        $this->container['projectUserRoleModel']->addUser($this->projectId, $bob, 'project-member');
+        $hers = $this->reassignedTask(3.5, $alice, $bob);
+        $this->container['userSession']->initialize($this->container['userModel']->getById($bob));
+
+        $hours = $this->controller()->apply(['project_id' => $this->projectId, 'task_ids' => [(string) $hers], 'entered_date' => '2020-01-01'], $bob);
+
+        $this->assertSame(0.0, $hours);
+        $this->assertSame([$hers => 0], $this->enteredAt());
+    }
+
+    public function testAMemberCanDateTheirOwnTimeOnASubtaskNowAssignedToSomeoneElse(): void
+    {
+        $alice = $this->user('alice');
+        $bob   = $this->user('bob');
+        $this->container['projectUserRoleModel']->addUser($this->projectId, $alice, 'project-member');
+        $hers = $this->reassignedTask(3.5, $alice, $bob);
+        $this->container['userSession']->initialize($this->container['userModel']->getById($alice));
+
+        $hours = $this->controller()->apply(['project_id' => $this->projectId, 'task_ids' => [(string) $hers], 'entered_date' => '2026-10-05'], $alice);
+
+        $this->assertSame(3.5, $hours);
+        $this->assertSame([$hers => strtotime('2026-10-05 12:00:00')], $this->enteredAt());
+    }
+
+    public function testAProjectManagerDatesEveryonesTime(): void
+    {
+        $alice = $this->user('alice');
+        $bob   = $this->user('bob');
+        $carol = $this->user('carol');
+        $this->container['projectUserRoleModel']->addUser($this->projectId, $carol, 'project-manager');
+        $hers = $this->reassignedTask(3.5, $alice, $bob);
+        $his  = $this->manualTask(2.0, '', $bob);
+        $this->container['userSession']->initialize($this->container['userModel']->getById($carol));
+
+        $hours = $this->controller()->apply(['project_id' => $this->projectId, 'task_ids' => [(string) $hers, (string) $his], 'entered_date' => '2026-10-05'], $carol);
+
+        $when = strtotime('2026-10-05 12:00:00');
+        $this->assertSame(5.5, $hours);
+        $this->assertSame([$hers => $when, $his => $when], $this->enteredAt());
+    }
+
+    public function testAProjectViewerIsRefused(): void
+    {
+        $vic = $this->user('vic');
+        $this->container['projectUserRoleModel']->addUser($this->projectId, $vic, 'project-viewer');
+        $theirs = $this->manualTask(1.0, '', $vic);
+        $this->container['userSession']->initialize($this->container['userModel']->getById($vic));
+
+        try {
+            $this->controller()->apply(['project_id' => $this->projectId, 'task_ids' => [(string) $theirs], 'entered_date' => '2026-10-05'], $vic);
+            $this->fail('a viewer must not date time');
+        } catch (AccessForbiddenException $e) {
+            $this->assertSame([$theirs => 0], $this->enteredAt());
+        }
     }
 
     public function testDatedTimeMovesFromTheNoticeIntoTheReportForThatDay(): void

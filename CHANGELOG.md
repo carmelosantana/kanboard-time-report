@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.3 — 2026-11-25
+
+### Security
+- Dating undated time: members and custom roles date only the manual time they logged themselves, even on a subtask now assigned to them; project viewers are refused. Managers and admins still date everyone's.
+
 ## 1.7.2 — 2026-11-17
 
 ### Fixed

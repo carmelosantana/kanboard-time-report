@@ -48,7 +48,8 @@ class ManualTimeLog extends Base
     /**
      * Give the undated manual time of the chosen tasks an entry date, so it is reported
      * on that day. Only ledger rows with no date are touched, and only on tasks of
-     * $projectId; $ownUserId limits it to that person's subtasks.
+     * $projectId; $ownUserId limits it to the time that person logged, whoever the
+     * subtask is assigned to now.
      *
      * @param  int[] $taskIds
      * @return float the hours that were dated
@@ -68,7 +69,7 @@ class ManualTimeLog extends Base
             ->eq(TaskModel::TABLE . '.project_id', $projectId)
             ->in(SubtaskModel::TABLE . '.task_id', $taskIds);
         if ($ownUserId !== null) {
-            $query->eq(SubtaskModel::TABLE . '.user_id', $ownUserId);
+            $query->eq(self::TABLE . '.user_id', $ownUserId);
         }
 
         $rows = $query->findAll();
