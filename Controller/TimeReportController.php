@@ -255,7 +255,7 @@ class TimeReportController extends BaseController
 
     /**
      * Date the undated manual time of $values['task_ids'] on $values['entered_date'].
-     * A member dates only their own subtasks; whoever may report on others dates all.
+     * A member dates only the time they logged; whoever may report on others dates all.
      *
      * @return ?float hours dated, or null when no task or no valid date was given
      */
