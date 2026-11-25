@@ -1,25 +1,19 @@
+# Tests, then builds and publishes the plugin zip when a vX.Y.Z tag is pushed.
+# Managed from carmelosantana/kanboard-plugin-ci (templates/workflows/); update it with
+# scripts/sync-workflows.sh there rather than by hand.
 name: release
 on:
   push:
     tags: ['v*']
 permissions:
-  contents: write
+  contents: read
 jobs:
+  test:
+    uses: carmelosantana/kanboard-plugin-ci/.github/workflows/plugin-test.yml@21719ae8cc49d656a3644da8ea6c30093f0345be # harness 2026-11-25
   release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - name: Build and publish plugin zip
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          NAME=$(grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' plugin.json | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
-          VERSION=$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' plugin.json | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
-          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match plugin.json v$VERSION"; exit 1
-          fi
-          mkdir -p /tmp/stage/"$NAME"
-          rsync -a --exclude '.git' --exclude '.github' --exclude 'Test' --exclude '.DS_Store' ./ /tmp/stage/"$NAME"/
-          ( cd /tmp/stage && zip -qr "$GITHUB_WORKSPACE/${NAME}-${VERSION}.zip" "$NAME" )
-          gh release create "$GITHUB_REF_NAME" "${NAME}-${VERSION}.zip" \
-            --title "$GITHUB_REF_NAME" --notes "Release $GITHUB_REF_NAME"
+    needs: test
+    permissions:
+      contents: write
+    uses: carmelosantana/kanboard-plugin-ci/.github/workflows/plugin-release.yml@21719ae8cc49d656a3644da8ea6c30093f0345be # harness 2026-11-25
+    with:
+      ship-docs: false
