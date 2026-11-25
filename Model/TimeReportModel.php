@@ -434,6 +434,21 @@ class TimeReportModel extends Base
         return $this->projectUserRoleModel->getUserRole($projectId, $userId) === Role::PROJECT_MANAGER;
     }
 
+    /**
+     * May $userId change time records in $projectId? App administrators always may;
+     * otherwise any project role above viewer (member, manager or a custom role).
+     */
+    public function canEditTime(int $projectId, int $userId): bool
+    {
+        if ($this->userSession->isAdmin()) {
+            return true;
+        }
+
+        $role = (string) $this->projectUserRoleModel->getUserRole($projectId, $userId);
+
+        return $role !== '' && $role !== Role::PROJECT_VIEWER;
+    }
+
     /** Every POSITIVE user id in the gathered rows, as a logger or a task owner. */
     public static function allUserIds(array $subtaskRows, array $taskRows): array
     {

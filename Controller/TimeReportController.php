@@ -263,6 +263,9 @@ class TimeReportController extends BaseController
     {
         $projectId = (int) ($values['project_id'] ?? 0);
         $this->timeReportModel->assertProjectAccess($projectId, $userId);
+        if (! $this->timeReportModel->canEditTime($projectId, $userId)) {
+            throw new AccessForbiddenException(t('You are not allowed to change time in this project.'));
+        }
 
         $date    = $this->validDate((string) ($values['entered_date'] ?? ''), '');
         $taskIds = is_array($values['task_ids'] ?? null) ? $values['task_ids'] : [];
