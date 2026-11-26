@@ -78,7 +78,7 @@ class AiSummaryModel extends Base
     private function structured(array $messages, ?string $profileId, string $feature): array
     {
         $quota = $this->injectedQuota ?? new AiQuota($this->container);
-        $refusal = $quota->consume((int) $this->userSession->getId(), $feature, array_column($messages, 'content'));
+        $refusal = $quota->consume((int) $this->userSession->getId(), $feature, [...array_column($messages, 'content'), json_encode(self::SCHEMA)]);
         if ($refusal !== null) {
             throw new AiSummaryRefused($refusal);
         }

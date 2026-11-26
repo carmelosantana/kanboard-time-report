@@ -233,7 +233,7 @@ class AiSummaryModelTest extends Base
 
         $this->assertSame(['timereport.summary', 'timereport.row_summary', 'timereport.row_summary'], array_column($quota->calls, 1));
         $this->assertSame([4, 4, 4], array_column($quota->calls, 0));
-        $this->assertSame(array_column($m->buildMessages($this->detail()), 'content'), $quota->calls[0][2], 'the check sees the text that is sent');
+        $this->assertSame([...array_column($m->buildMessages($this->detail()), 'content'), json_encode(AiSummaryModel::SCHEMA)], $quota->calls[0][2], 'the check sees the text that is sent');
     }
 
     public function testARefusalThrowsBeforeTheProvider(): void
@@ -245,4 +245,14 @@ class AiSummaryModelTest extends Base
         $this->expectExceptionMessage('You have reached the AI limit.');
         $m->summarizeTask(['task_id' => 7, 'title' => 'Build API']);
     }
+
+    public function testTheSchemaIsCountedWithTheMessages(): void
+    {
+        $m = $this->model(['summary' => 'ok', 'highlights' => []]);
+        $quota = $this->fakeQuota();
+        $m->setQuota($quota);
+        $m->summarizeTask(['task_id' => 7, 'title' => 'Build API']);
+        $this->assertContains(json_encode(AiSummaryModel::SCHEMA), $quota->calls[0][2]);
+    }
+
 }
