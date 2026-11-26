@@ -3,6 +3,7 @@
 namespace Kanboard\Plugin\TimeReport\Model;
 
 use Kanboard\Core\Base;
+use Kanboard\Plugin\AiConnector\Model\AiQuota;
 use Kanboard\Plugin\AiConnector\Model\ProviderRegistry;
 
 /**
@@ -61,6 +62,30 @@ class AiSummaryModel extends Base
         $this->injectedRegistry = $registry;
     }
 
+    /** Optional AiQuota override (has consume()) — injected in tests; null → built from container. */
+    private ?object $injectedQuota = null;
+
+    public function setQuota(object $quota): void
+    {
+        $this->injectedQuota = $quota;
+    }
+
+    /**
+     * One provider call, after AiConnector's shared quota and input cap have let it through.
+     *
+     * @throws AiSummaryRefused
+     */
+    private function structured(array $messages, ?string $profileId, string $feature): array
+    {
+        $quota = $this->injectedQuota ?? new AiQuota($this->container);
+        $refusal = $quota->consume((int) $this->userSession->getId(), $feature, array_column($messages, 'content'));
+        if ($refusal !== null) {
+            throw new AiSummaryRefused($refusal);
+        }
+        $registry = $this->injectedRegistry ?? new ProviderRegistry($this->container);
+        return $registry->structured($messages, json_encode(self::SCHEMA), $profileId);
+    }
+
     /**
      * Report-level summary over the whole detail set (used for the user/total breakdowns).
      *
@@ -69,9 +94,7 @@ class AiSummaryModel extends Base
      */
     public function summarize(array $detailTasks, ?string $profileId = null): array
     {
-        $registry = $this->injectedRegistry ?? new ProviderRegistry($this->container);
-        $messages = $this->buildMessages($detailTasks);
-        $decoded  = $registry->structured($messages, json_encode(self::SCHEMA), $profileId);
+        $decoded = $this->structured($this->buildMessages($detailTasks), $profileId, 'timereport.summary');
         return $this->normalise($decoded);
     }
 
@@ -83,9 +106,7 @@ class AiSummaryModel extends Base
      */
     public function summarizeTask(array $row, ?string $profileId = null): array
     {
-        $registry = $this->injectedRegistry ?? new ProviderRegistry($this->container);
-        $messages = $this->buildTaskMessages($row);
-        $decoded  = $registry->structured($messages, json_encode(self::SCHEMA), $profileId);
+        $decoded = $this->structured($this->buildTaskMessages($row), $profileId, 'timereport.row_summary');
         return $this->normalise($decoded);
     }
 
@@ -98,9 +119,7 @@ class AiSummaryModel extends Base
      */
     public function summarizeAggregate(string $granularity, string $rowLabel, array $memberTaskSummaries, ?string $profileId = null): array
     {
-        $registry = $this->injectedRegistry ?? new ProviderRegistry($this->container);
-        $messages = $this->buildAggregateMessages($granularity, $rowLabel, $memberTaskSummaries);
-        $decoded  = $registry->structured($messages, json_encode(self::SCHEMA), $profileId);
+        $decoded = $this->structured($this->buildAggregateMessages($granularity, $rowLabel, $memberTaskSummaries), $profileId, 'timereport.row_summary');
         return $this->normalise($decoded);
     }
 

@@ -5,6 +5,7 @@ namespace Kanboard\Plugin\TimeReport\Controller;
 use Kanboard\Controller\BaseController;
 use Kanboard\Core\Controller\AccessForbiddenException;
 use Kanboard\Plugin\TimeReport\Model\AiGate;
+use Kanboard\Plugin\TimeReport\Model\AiSummaryRefused;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryCache;
 use Kanboard\Plugin\TimeReport\Model\ManualTimeLog;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
@@ -333,7 +334,11 @@ class TimeReportController extends BaseController
             throw new AccessForbiddenException(t('AI summaries are not available.'));
         }
 
-        $this->response->json($this->computeRowSummary($this->request->getValues()));
+        try {
+            $this->response->json($this->computeRowSummary($this->request->getValues()));
+        } catch (AiSummaryRefused $e) {
+            $this->response->json(['error' => $e->getMessage()], 429);
+        }
     }
 
     /**
@@ -571,6 +576,8 @@ class TimeReportController extends BaseController
         if ($wantsAi) {
             try {
                 $report['ai'] = $this->aiSummaryModel->summarize($report['detail'], $profileId);
+            } catch (AiSummaryRefused $e) {
+                $report['ai'] = ['summary' => '', 'highlights' => [], 'error' => $e->getMessage()];
             } catch (\Throwable $e) {
                 $report['ai'] = ['summary' => '', 'highlights' => [], 'error' => t('The AI summary could not be generated.')];
             }

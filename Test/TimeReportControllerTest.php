@@ -264,4 +264,61 @@ class TimeReportControllerTest extends Base
             'a denied export must redirect rather than stream a misleading billing artifact'
         );
     }
+
+    public function testAReportSummaryRefusalShowsTheReason(): void
+    {
+        $this->container['timeReportModel'] = fn ($c) => new class($c) extends \Kanboard\Plugin\TimeReport\Model\TimeReportModel {
+            public function report(int $projectId, string $startDate, string $endDate, string $granularity, bool $includeDetail, int $userId, ?array $subjectUserIds = null, bool $allUsers = false): array
+            {
+                return ['project_id' => $projectId, 'detail' => [], 'ai' => null];
+            }
+        };
+        $this->container['aiSummaryModel'] = fn ($c) => new class($c) extends \Kanboard\Plugin\TimeReport\Model\AiSummaryModel {
+            public function summarize(array $detailTasks, ?string $profileId = null): array
+            {
+                throw new \Kanboard\Plugin\TimeReport\Model\AiSummaryRefused('You have reached the AI limit.');
+            }
+        };
+        $this->container['request'] = new \Kanboard\Core\Http\Request($this->container, ['REQUEST_METHOD' => 'POST'], [], [
+            'csrf_token' => $this->container['token']->getCSRFToken(),
+            'project_id' => '5', 'granularity' => 'task', 'include_ai_summary' => '1',
+        ]);
+        $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
+            public ?array $rendered = null;
+            protected function isAiEnabled(): bool { return true; }
+            protected function renderReport(array $report): void { $this->rendered = $report; }
+        };
+
+        $controller->generate();
+
+        $this->assertSame('You have reached the AI limit.', $controller->rendered['ai']['error'] ?? null);
+    }
+
+    public function testARowSummaryRefusalAnswers429WithTheReason(): void
+    {
+        $this->container['request'] = new \Kanboard\Core\Http\Request($this->container, ['REQUEST_METHOD' => 'POST'], [], [
+            'csrf_token' => $this->container['token']->getCSRFToken(),
+        ]);
+        $sent = [];
+        $this->container['response'] = new class($this->container, $sent) extends \Kanboard\Core\Http\Response {
+            public function __construct($c, private array &$sent) { parent::__construct($c); }
+            public function json(array $data, $statusCode = 200) { $this->sent = [$data, $statusCode]; }
+        };
+        $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
+            protected function isAiEnabled(): bool { return true; }
+            protected function computeRowSummary(array $values): array
+            {
+                throw new \Kanboard\Plugin\TimeReport\Model\AiSummaryRefused('You have reached the AI limit.');
+            }
+        };
+
+        $controller->rowSummary();
+
+        $this->assertSame([['error' => 'You have reached the AI limit.'], 429], $sent);
+    }
+
+    public function testTheGateNeedsAiConnectorsQuotaService(): void
+    {
+        $this->assertStringContainsString('AiQuota::class', file_get_contents(dirname(__DIR__) . '/Model/AiGate.php'));
+    }
 }

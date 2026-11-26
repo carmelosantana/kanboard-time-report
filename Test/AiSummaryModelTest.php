@@ -5,6 +5,7 @@ require_once 'tests/units/Base.php';
 use KanboardTests\units\Base;
 use Kanboard\Plugin\AiConnector\Model\ProviderRegistry;
 use Kanboard\Plugin\TimeReport\Model\AiSummaryModel;
+use Kanboard\Plugin\TimeReport\Model\AiSummaryRefused;
 
 class AiSummaryModelTest extends Base
 {
@@ -23,7 +24,22 @@ class AiSummaryModelTest extends Base
     {
         $m = new AiSummaryModel($this->container);
         $m->setRegistry($this->fakeRegistry($return));
+        $m->setQuota($this->fakeQuota());
         return $m;
+    }
+
+    /** An AiConnector AiQuota stand-in: records each check, refuses when given a refusal. */
+    private function fakeQuota(?string $refusal = null): object
+    {
+        return new class($refusal) {
+            public array $calls = [];
+            public function __construct(private ?string $refusal) {}
+            public function consume(int $userId, string $feature, string|array $input): ?string
+            {
+                $this->calls[] = [$userId, $feature, $input];
+                return $this->refusal;
+            }
+        };
     }
 
     private function detail(): array
@@ -125,6 +141,7 @@ class AiSummaryModelTest extends Base
     {
         $m = new AiSummaryModel($this->container);
         $m->setRegistry($this->fakeRegistry(['summary' => 'Task done.', 'highlights' => ['Shipped']]));
+        $m->setQuota($this->fakeQuota());
         $out = $m->summarizeTask(['title' => 'X', 'hours' => 1.0, 'subtasks' => []]);
         $this->assertSame('Task done.', $out['summary']);
         $this->assertSame(['Shipped'], $out['highlights']);
@@ -175,6 +192,7 @@ class AiSummaryModelTest extends Base
     {
         $m = new AiSummaryModel($this->container);
         $m->setRegistry($this->fakeRegistry(['summary' => 'A productive day.', 'highlights' => ['Two tasks done']]));
+        $m->setQuota($this->fakeQuota());
         $out = $m->summarizeAggregate('day', '2026-03-10', [['summary' => 's', 'highlights' => []]]);
         $this->assertSame('A productive day.', $out['summary']);
         $this->assertSame(['Two tasks done'], $out['highlights']);
@@ -200,5 +218,31 @@ class AiSummaryModelTest extends Base
         $required = $inner['required'];
         sort($required);
         $this->assertSame($propertyKeys, $required, 'strict mode requires every property to be listed in required');
+    }
+
+    public function testEveryProviderCallIsCheckedAgainstTheQuotaFirst(): void
+    {
+        $this->container['userSession'] = new class { public function getId() { return 4; } };
+        $m = $this->model(['summary' => 'ok', 'highlights' => []]);
+        $quota = $this->fakeQuota();
+        $m->setQuota($quota);
+
+        $m->summarize($this->detail());
+        $m->summarizeTask(['task_id' => 7, 'title' => 'Build API']);
+        $m->summarizeAggregate('week', 'W10', [['title' => 'Build API', 'summary' => 'Did it']]);
+
+        $this->assertSame(['timereport.summary', 'timereport.row_summary', 'timereport.row_summary'], array_column($quota->calls, 1));
+        $this->assertSame([4, 4, 4], array_column($quota->calls, 0));
+        $this->assertSame(array_column($m->buildMessages($this->detail()), 'content'), $quota->calls[0][2], 'the check sees the text that is sent');
+    }
+
+    public function testARefusalThrowsBeforeTheProvider(): void
+    {
+        $m = new AiSummaryModel($this->container);
+        $m->setRegistry($this->fakeRegistry(null, new \RuntimeException('provider must not be called')));
+        $m->setQuota($this->fakeQuota('You have reached the AI limit.'));
+        $this->expectException(AiSummaryRefused::class);
+        $this->expectExceptionMessage('You have reached the AI limit.');
+        $m->summarizeTask(['task_id' => 7, 'title' => 'Build API']);
     }
 }
