@@ -42,7 +42,7 @@ class PluginMetaTest extends Base
         $j = $this->json();
         $this->assertArrayNotHasKey('requires', $j, 'AiConnector and Agents must be recommends, never requires');
         $this->assertSame(['AiConnector', 'Agents'], array_column($j['recommends'], 'plugin'));
-        $this->assertSame(['1.0.0', '0.3.0'], array_column($j['recommends'], 'min_version'), 'bare semver, no ">=" prefix');
+        $this->assertSame(['1.3.0', '0.3.0'], array_column($j['recommends'], 'min_version'), 'bare semver, no ">=" prefix');
         foreach ($j['recommends'] as $dep) {
             $this->assertStringStartsNotWith('>=', $dep['min_version']);
             $this->assertNotEmpty($dep['reason']);

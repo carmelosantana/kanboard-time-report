@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.4 — 2026-11-25
+
+### Security
+- The report summary and the per-row summaries now count against AI Connector's AI limits: each AI request first passes its per-person hourly quota and longest-request cap, and a request past either is refused with the reason, before it reaches the provider.
+- The AI summaries need AI Connector 1.3.0 or later; with an older one they stay hidden. The AiConnector recommendation asks for 1.3.0.
+
 ## 1.7.3 — 2026-11-25
 
 ### Security
