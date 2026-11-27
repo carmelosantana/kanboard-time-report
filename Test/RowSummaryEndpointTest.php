@@ -3,6 +3,7 @@
 require_once 'tests/units/Base.php';
 require_once __DIR__ . '/SummarySchemaHelper.php';
 require_once __DIR__ . '/ProgressFixture.php';
+require_once __DIR__ . '/RoutingStubRegistry.php';
 
 use KanboardTests\units\Base;
 use Kanboard\Plugin\TimeReport\Model\TimeReportModel;
@@ -21,6 +22,7 @@ class RowSummaryEndpointTest extends Base
     use SummarySchemaHelper;
     use ProgressFixture;
 
+    public ?RoutingStubRegistry $registry = null;
     private int $taskCalls = 0;
     private int $aggCalls = 0;
     public ?string $lastTaskProfile = 'unset';
@@ -62,8 +64,12 @@ class RowSummaryEndpointTest extends Base
 
     private function controller(): object
     {
-        return new class($this->container) extends TimeReportController {
+        $this->registry ??= new RoutingStubRegistry($this->container);
+        $registry = $this->registry;
+        return new class($this->container, $registry) extends TimeReportController {
+            public function __construct($c, private $stub) { parent::__construct($c); }
             protected function isAiEnabled(): bool { return true; }
+            protected function registry(): \Kanboard\Plugin\AiConnector\Model\ProviderRegistry { return $this->stub; }
             public function run(array $values): array { return $this->computeRowSummary($values); }
         };
     }
@@ -243,45 +249,49 @@ class RowSummaryEndpointTest extends Base
         $this->assertSame(1, $this->aggCalls, 'force composes the aggregate once');
     }
 
-    public function testSelectedProfileIsValidatedAndThreadedToGeneration(): void
+    public function testTheResolvedProfileIsThreadedToGenerationAndTheProjectIsPassed(): void
     {
         $this->wireServices();
-        // One real AiConnector profile so validProfileId accepts it.
-        $this->container['configModel']->save(['aiconnector_profiles' => json_encode([
-            ['id' => 'p-luna', 'label' => 'Luna', 'provider' => 'openai', 'model' => 'gpt-5-luna'],
-        ])]);
         [$projectId, $taskId] = $this->seedTaskWithSubtask('Lambda');
         $c = $this->controller();
+        $this->registry->returns = 'p-luna';
 
-        // A valid selected profile is forwarded to the summarize call.
         $values = $this->values($projectId, 'task', (string) $taskId);
-        $values['profile_id'] = 'p-luna';
+        $values['ai_profile'] = 'forged';
         $c->run($values);
-        $this->assertSame('p-luna', $this->lastTaskProfile, 'a valid profile id is forwarded to generation');
 
-        // An unknown profile is rejected by validation → default (null).
-        $values2 = $this->values($projectId, 'task', (string) $taskId, true); // force → regenerate
-        $values2['profile_id'] = 'ghost-profile';
-        $c->run($values2);
-        $this->assertNull($this->lastTaskProfile, 'an unknown profile id is validated away to the default');
+        $this->assertSame([['timereport.row_summary', $projectId, 'forged']], $this->registry->resolves);
+        $this->assertSame('p-luna', $this->lastTaskProfile, 'the resolved id reaches generation, never the posted one');
     }
 
-    public function testSelectedProfileThreadsThroughToAggregateComposition(): void
+    public function testTheResolvedProfileThreadsThroughToAggregateComposition(): void
     {
         $this->wireServices();
-        $this->container['configModel']->save(['aiconnector_profiles' => json_encode([
-            ['id' => 'p-luna', 'label' => 'Luna', 'provider' => 'openai', 'model' => 'gpt-5-luna'],
-        ])]);
         [$projectId, $taskId] = $this->seedTaskWithSubtask('Mu');
-        $dayKey = date('Y-m-01');
         $c = $this->controller();
+        $this->registry->returns = 'p-luna';
 
-        $values = $this->values($projectId, 'day', $dayKey);
-        $values['profile_id'] = 'p-luna';
+        $values = $this->values($projectId, 'day', date('Y-m-01'));
+        $values['ai_profile'] = 'p-luna';
         $c->run($values);
 
+        $this->assertSame('timereport.row_summary', $this->registry->resolves[0][0], 'the aggregate summary routes as row_summary');
         $this->assertSame('p-luna', $this->lastTaskProfile, 'member generation honors the profile');
         $this->assertSame('p-luna', $this->lastAggProfile, 'aggregate composition honors the profile');
+    }
+
+    public function testNothingReadyMakesNoGenerationCall(): void
+    {
+        $this->wireServices();
+        [$projectId, $taskId] = $this->seedTaskWithSubtask('Nu');
+        $c = $this->controller();
+        $this->registry->returns = '';
+
+        $out = $c->run($this->values($projectId, 'task', (string) $taskId));
+
+        $this->assertArrayHasKey('error', $out);
+        $this->assertSame(0, $this->taskCalls);
+        $this->assertSame(0, $this->aggCalls);
     }
 
     // ── Task 11: cache-only summaries feed the CSV export ──────────────────────
@@ -290,6 +300,7 @@ class RowSummaryEndpointTest extends Base
     {
         return new class($this->container) extends TimeReportController {
             protected function isAiEnabled(): bool { return true; }
+            protected function registry(): \Kanboard\Plugin\AiConnector\Model\ProviderRegistry { return new \RoutingStubRegistry($this->container); }
             public function run(array $values): array { return $this->computeRowSummary($values); }
             public function cachedFor(array $report): array { return $this->cachedRowSummaries($report); }
             public function report(array $values): array {

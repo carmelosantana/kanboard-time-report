@@ -8,7 +8,7 @@ use Kanboard\Plugin\AiConnector\Model\ProviderRegistry;
  * AiGate — single source of truth for "is the AI narrative summary available?".
  *
  * Gate = PHP >= 8.4 AND AiConnector present (with its AiQuota spend guard,
- * 1.3.0+) AND ProviderRegistry::isReady(). An older AiConnector keeps AI off.
+ * 1.3.0+) AND the 1.4.0 routing API (ProviderRegistry::resolve()) AND ProviderRegistry::isReady(). An older AiConnector keeps AI off.
  * Consulted identically by Plugin::initialize() (AI toggle) and
  * TimeReportController::isAiEnabled() (route guards) so they never diverge.
  *
@@ -26,7 +26,8 @@ class AiGate
 
         $present = $connectorPresent
             ?? (class_exists(\Kanboard\Plugin\AiConnector\Model\ProviderRegistry::class)
-                && class_exists(\Kanboard\Plugin\AiConnector\Model\AiQuota::class));
+                && class_exists(\Kanboard\Plugin\AiConnector\Model\AiQuota::class)
+                && method_exists(\Kanboard\Plugin\AiConnector\Model\ProviderRegistry::class, 'resolve'));
         if (! $present) {
             return false;
         }

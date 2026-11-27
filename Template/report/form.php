@@ -34,10 +34,7 @@ $values['end_date']   = $this->helper->timeReport->fieldDate((string) ($values['
             <?php else: ?>
                 <p class="tr-ai-note"><?= t('Task titles, hours, categories, tags, dates and completed subtasks are sent to the AI provider. Descriptions and comments are not (an admin can enable descriptions in Settings → Integrations).') ?></p>
             <?php endif ?>
-            <?php if (! empty($profiles)): ?>
-                <?= $this->form->label(t('AI profile'), 'profile_id') ?>
-                <?= $this->form->select('profile_id', array_column($profiles, 'label', 'id')) ?>
-            <?php endif ?>
+            <?= $this->render('AiConnector:picker/select', ['options' => $ai_options ?? []]) ?>
         <?php else: ?>
             <p class="tr-ai-note tr-ai-off"><?= t('AI summary unavailable (install and configure the AiConnector plugin to enable it).') ?></p>
         <?php endif ?>

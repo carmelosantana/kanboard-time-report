@@ -39,7 +39,7 @@ class ReportFlowTest extends Base
         return $overrides + [
             'project_id' => 5, 'project_name' => 'Acme', 'start_date' => '2026-03-01', 'end_date' => '2026-03-31',
             'granularity' => 'day', 'total_hours' => 0.0, 'tracked_hours' => 0.0, 'manual_hours' => 0.0,
-            'breakdown' => [], 'include_detail' => false, 'detail' => [], 'ai' => null, 'profile_id' => '',
+            'breakdown' => [], 'include_detail' => false, 'detail' => [], 'ai' => null, 'ai_profile' => '',
             'subject_user_ids' => [1], 'users' => [], 'participants' => [], 'multi_user' => false,
             'can_report_others' => true, 'scope_denied' => false,
             'untracked' => ['task_count' => 0, 'subtask_count' => 0, 'total_hours' => 0.0, 'tasks' => []],
@@ -50,7 +50,7 @@ class ReportFlowTest extends Base
     {
         return $this->container['template']->render('TimeReport:report/show', [
             'report' => $report, 'markdown' => '', 'ai_enabled' => $profiles !== [], 'projects' => [5 => 'Acme'],
-            'profiles' => $profiles, 'can_report_others' => true, 'current_user_id' => 1,
+            'ai_options' => ['show' => $profiles !== [], 'profiles' => $profiles, 'selected' => 'deep'], 'can_report_others' => true, 'current_user_id' => 1,
         ]);
     }
 
@@ -123,23 +123,24 @@ class ReportFlowTest extends Base
         $this->assertFalse($model->report($projectId, '2026-03-01', '2026-03-31', 'day', false, $bob, null, true)['all_users']);
     }
 
-    public function testFiltersFormKeepsTheChosenAiProfile(): void
+    public function testFiltersFormUsesTheSharedAiPicker(): void
     {
         $profiles = [['id' => 'fast', 'label' => 'Fast'], ['id' => 'deep', 'label' => 'Deep']];
-        $form = $this->filtersForm($this->show($this->report(['profile_id' => 'deep']), $profiles));
+        $form = $this->filtersForm($this->show($this->report(['ai_profile' => 'deep']), $profiles));
 
-        $this->assertMatchesRegularExpression('#<option value="deep" selected="selected">#', $form);
+        $this->assertStringContainsString('name="ai_profile"', $form);
+        $this->assertMatchesRegularExpression('#<option value="deep"\s+selected#', $form);
     }
 
     public function testUsersPanelKeepsTheAiSummaryAndProfile(): void
     {
         $people = [1 => ['name' => 'Me', 'hours' => 1.0], 2 => ['name' => 'Bo', 'hours' => 1.0]];
         $html = $this->container['template']->render('TimeReport:report/_users', [
-            'report' => $this->report(['participants' => $people, 'profile_id' => 'deep', 'ai' => ['summary' => 's', 'highlights' => []]]),
+            'report' => $this->report(['participants' => $people, 'ai_profile' => 'deep', 'ai' => ['summary' => 's', 'highlights' => []]]),
         ]);
 
         $this->assertStringContainsString('name="include_ai_summary" value="1"', $html);
-        $this->assertStringContainsString('name="profile_id" value="deep"', $html);
+        $this->assertStringContainsString('name="ai_profile" value="deep"', $html);
     }
 
     public function testControlBarOnlyClaimsAiWhenTheReportHasAnAiSummary(): void

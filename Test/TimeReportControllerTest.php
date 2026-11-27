@@ -1,6 +1,7 @@
 <?php
 
 require_once 'tests/units/Base.php';
+require_once __DIR__ . '/RoutingStubRegistry.php';
 require_once __DIR__ . '/ProgressFixture.php';
 
 use KanboardTests\units\Base;
@@ -28,12 +29,12 @@ class TimeReportControllerTest extends Base
         $this->assertStringContainsString("'day', 'week', 'task', 'total'", $src, 'granularity must be validated against the allow-list');
     }
 
-    public function testAiIsGatedAndProfileValidated(): void
+    public function testAiIsGatedAndProfileResolved(): void
     {
         $src = $this->source();
         $this->assertStringContainsString('isAiEnabled()', $src, 'AI path must be gated');
         $this->assertStringContainsString('include_ai_summary', $src);
-        $this->assertStringContainsString("array_column(", $src, 'submitted profile id must be validated against listProfiles()');
+        $this->assertStringContainsString('->resolve(', $src, 'the posted pick must go through the registry\'s resolve()');
     }
 
     public function testExportStreamsCsv(): void
@@ -112,7 +113,7 @@ class TimeReportControllerTest extends Base
         };
         $this->container['aiSummaryModel'] = function ($c) use ($fakeAi) { return $fakeAi; };
 
-        // Request: AI wanted, include_detail NOT set, no profile_id (so validProfileId
+        // Request: AI wanted, include_detail NOT set, no ai_profile (so resolve
         // short-circuits). getValues() only returns POST when a valid csrf_token is
         // present, so mint one from the same container token service the request uses.
         $csrf = $this->container['token']->getCSRFToken();
@@ -127,6 +128,7 @@ class TimeReportControllerTest extends Base
 
         $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
             protected function isAiEnabled(): bool { return true; }
+            protected function registry(): \Kanboard\Plugin\AiConnector\Model\ProviderRegistry { return new \RoutingStubRegistry($this->container); }
             public function buildPublic(): array { return $this->buildReportFromRequest(); }
         };
 
@@ -175,6 +177,7 @@ class TimeReportControllerTest extends Base
         $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
             public ?array $rendered = null;
             protected function isAiEnabled(): bool { return true; }
+            protected function registry(): \Kanboard\Plugin\AiConnector\Model\ProviderRegistry { return new \RoutingStubRegistry($this->container); }
             protected function renderReport(array $report): void { $this->rendered = $report; }
         };
 
@@ -286,6 +289,7 @@ class TimeReportControllerTest extends Base
         $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
             public ?array $rendered = null;
             protected function isAiEnabled(): bool { return true; }
+            protected function registry(): \Kanboard\Plugin\AiConnector\Model\ProviderRegistry { return new \RoutingStubRegistry($this->container); }
             protected function renderReport(array $report): void { $this->rendered = $report; }
         };
 
@@ -306,6 +310,7 @@ class TimeReportControllerTest extends Base
         };
         $controller = new class($this->container) extends \Kanboard\Plugin\TimeReport\Controller\TimeReportController {
             protected function isAiEnabled(): bool { return true; }
+            protected function registry(): \Kanboard\Plugin\AiConnector\Model\ProviderRegistry { return new \RoutingStubRegistry($this->container); }
             protected function computeRowSummary(array $values): array
             {
                 throw new \Kanboard\Plugin\TimeReport\Model\AiSummaryRefused('You have reached the AI limit.');

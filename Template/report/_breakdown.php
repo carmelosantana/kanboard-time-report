@@ -27,10 +27,10 @@ $trNum = fn (float $h): string => $this->helper->timeReport->formatHours($h);
         <input type="hidden" name="start_date" value="<?= $this->text->e($report['start_date']) ?>">
         <input type="hidden" name="end_date" value="<?= $this->text->e($report['end_date']) ?>">
         <input type="hidden" name="granularity" value="<?= $this->text->e($report['granularity']) ?>">
-        <?php if (! empty($report['profile_id'])): ?>
+        <?php if (! empty($report['ai_profile'])): ?>
             <!-- The selected AI profile drives generation on a miss/force; the cache key
                  stays row + content hash only (D6), so this never affects cache identity. -->
-            <input type="hidden" name="profile_id" value="<?= $this->text->e($report['profile_id']) ?>">
+            <input type="hidden" name="ai_profile" value="<?= $this->text->e($report['ai_profile']) ?>">
         <?php endif ?>
         <?php foreach ($report['subject_user_ids'] as $trUid): ?>
             <input type="hidden" name="user_ids[]" value="<?= (int) $trUid ?>">

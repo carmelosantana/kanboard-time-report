@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.0 — Unreleased
+
+### Changed
+- The AI summaries follow AI Connector's model routing: the report summary and the per-row summaries are two routable features, resolved for the report's project (or no project when the report spans several). The AI picker is AI Connector's shared one and posts `ai_profile`.
+- AI Connector 1.4.0 or later is needed; with an older one the AI summaries stay hidden. The AiConnector recommendation asks for 1.4.0.
+
 ## 1.7.4 — 2026-11-25
 
 ### Security

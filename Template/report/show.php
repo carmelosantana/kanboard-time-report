@@ -29,7 +29,6 @@ $trValues = [
     'end_date'    => $this->helper->timeReport->fieldDate($report['end_date']),
     'granularity' => $report['granularity'],
     'scope'       => $trScope,
-    'profile_id'  => $report['profile_id'] ?? '',
 ];
 $trExpandable = ! empty($ai_enabled) && in_array($report['granularity'], ['task', 'day', 'week'], true);
 $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']);
@@ -88,10 +87,7 @@ $trTotal = $this->helper->timeReport->formatHours((float) $report['total_hours']
             <label><?= $this->form->checkbox('include_detail', t('Include completed-task detail'), 1, ! empty($report['include_detail'])) ?></label>
             <?php if (! empty($ai_enabled)): ?>
                 <label><?= $this->form->checkbox('include_ai_summary', t('Add report-level AI summary'), 1, ! empty($report['ai'])) ?></label>
-                <?php if (! empty($profiles)): ?>
-                    <?= $this->form->label(t('AI profile'), 'profile_id') ?>
-                    <?= $this->form->select('profile_id', array_column($profiles, 'label', 'id'), $trValues) ?>
-                <?php endif ?>
+                <?= $this->render('AiConnector:picker/select', ['options' => $ai_options ?? []]) ?>
             <?php endif ?>
         </div>
     </form>

@@ -60,6 +60,12 @@ class Plugin extends Base
         // ── AI availability gate (single source of truth) ─────────────────────
         $this->aiEnabled = AiGate::isReady($this->container);
 
+        // ── AI features, for AiConnector's model routing (the hook is core, so this is safe without it)
+        $this->hook->on('aiconnector:features', fn () => [
+            ['id' => 'timereport.summary', 'label' => t('Report summary'), 'plugin' => 'TimeReport'],
+            ['id' => 'timereport.row_summary', 'label' => t('Row summaries'), 'plugin' => 'TimeReport'],
+        ]);
+
         // ── Routes ────────────────────────────────────────────────────────────
         $this->route->addRoute('timereport', 'TimeReportController', 'index', 'TimeReport');
         $this->route->addRoute('timereport/generate', 'TimeReportController', 'generate', 'TimeReport');
@@ -127,7 +133,7 @@ class Plugin extends Base
 
     public function getPluginVersion(): string
     {
-        return '1.7.4';
+        return '1.8.0';
     }
 
     public function getPluginHomepage(): string

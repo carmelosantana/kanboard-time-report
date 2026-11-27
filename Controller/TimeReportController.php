@@ -51,7 +51,7 @@ class TimeReportController extends BaseController
             'title'             => t('Time Report'),
             'projects'          => $projects,
             'ai_enabled'        => $this->isAiEnabled(),
-            'profiles'          => $this->aiProfiles(),
+            'ai_options'        => $this->aiOptions('timereport.summary', $selected > 0 ? $selected : null),
             'values'            => $values,
             'can_report_others' => $this->canReportOnAnyProject($userId),
             'send_descriptions' => $this->timeReportModel->sendDescriptionsEnabled(),
@@ -119,8 +119,8 @@ class TimeReportController extends BaseController
         if (! empty($values['include_detail'])) {
             $params['include_detail'] = 1;
         }
-        if (! empty($values['profile_id']) && is_string($values['profile_id'])) {
-            $params['profile_id'] = $values['profile_id'];
+        if (! empty($values['ai_profile']) && is_string($values['ai_profile'])) {
+            $params['ai_profile'] = $values['ai_profile'];
         }
 
         [$userIds, $allUsers] = $this->subjectSelection($values);
@@ -148,7 +148,7 @@ class TimeReportController extends BaseController
     /**
      * Render the report screen with the inline control bar's data (Option B).
      *
-     * Carries the accessible projects, AI profiles and permission flag so the
+     * Carries the accessible projects, the AI picker options and permission flag so the
      * collapse-to-summary "Edit filters" panel can re-submit to generate() in place.
      */
     protected function renderReport(array $report): void
@@ -160,7 +160,7 @@ class TimeReportController extends BaseController
             'markdown'          => $this->helper->timeReport->toMarkdown($report),
             'ai_enabled'        => $this->isAiEnabled(),
             'projects'          => $this->accessibleProjects($userId),
-            'profiles'          => $this->aiProfiles(),
+            'ai_options'        => $this->aiOptions('timereport.summary', $this->routingProject((int) ($report['project_id'] ?? 0))),
             'can_report_others' => $this->canReportOnAnyProject($userId),
             'current_user_id'   => (int) $userId,
         ]));
@@ -427,7 +427,10 @@ class TimeReportController extends BaseController
             return ['error' => t('This row is not part of the current report.')];
         }
 
-        $profileId          = $this->validProfileId($values['profile_id'] ?? null);
+        $profileId = $this->resolveProfile('timereport.row_summary', $projectId, $values['ai_profile'] ?? null);
+        if ($profileId === '') {
+            return ['error' => t('AI summaries are not available.')];
+        }
         $includeDescriptions = $this->timeReportModel->sendDescriptionsEnabled();
         $memberTaskIds       = array_map('intval', $row['task_ids'] ?? []);
         $contentRows         = $this->timeReportModel->buildTaskContentRows($projectId, $memberTaskIds, $includeDescriptions);
@@ -570,11 +573,15 @@ class TimeReportController extends BaseController
         // The selected profile is validated once and carried on the report so the per-row
         // summary context (_breakdown.php) forwards it, honoring the chosen profile on a
         // miss/force. The per-row CACHE stays profile-independent (D6): last generation wins.
-        $profileId = $this->validProfileId($values['profile_id'] ?? null);
-        $report['profile_id'] = (string) $profileId;
+        $pick = isset($values['ai_profile']) && is_string($values['ai_profile']) && $values['ai_profile'] !== '' ? $values['ai_profile'] : null;
+        $report['ai_profile'] = (string) $pick;
 
         if ($wantsAi) {
             try {
+                $profileId = $this->resolveProfile('timereport.summary', $projectId, $pick);
+                if ($profileId === '') {
+                    throw new AiSummaryRefused(t('AI summaries are not available.'));
+                }
                 $report['ai'] = $this->aiSummaryModel->summarize($report['detail'], $profileId);
             } catch (AiSummaryRefused $e) {
                 $report['ai'] = ['summary' => '', 'highlights' => [], 'error' => $e->getMessage()];
@@ -637,24 +644,32 @@ class TimeReportController extends BaseController
         return AiGate::isReady($this->container);
     }
 
-    private function aiProfiles(): array
+    /** The AiConnector registry — overridable in tests. */
+    protected function registry(): \Kanboard\Plugin\AiConnector\Model\ProviderRegistry
     {
-        if (! $this->isAiEnabled()) {
-            return [];
-        }
-        $registry = new \Kanboard\Plugin\AiConnector\Model\ProviderRegistry($this->container);
-        return $registry->listProfiles();
+        return new \Kanboard\Plugin\AiConnector\Model\ProviderRegistry($this->container);
     }
 
-    /** Validate a submitted profile id against the registry's list; null → default. */
-    private function validProfileId(?string $submitted): ?string
+    /** The project a report covers: its id when it covers exactly one, else null. */
+    private function routingProject(int $projectId): ?int
     {
-        if ($submitted === null || $submitted === '') {
-            return null;
+        return $projectId > 0 ? $projectId : null;
+    }
+
+    /** Picker data for the shared AiConnector select; hidden when the gate is closed. */
+    private function aiOptions(string $feature, ?int $projectId): array
+    {
+        if (! $this->isAiEnabled()) {
+            return ['show' => false, 'profiles' => [], 'selected' => ''];
         }
-        $registry = new \Kanboard\Plugin\AiConnector\Model\ProviderRegistry($this->container);
-        $ids = array_column($registry->listProfiles(), 'id');
-        return in_array($submitted, $ids, true) ? $submitted : null;
+        return $this->registry()->pickerOptions($feature, $projectId);
+    }
+
+    /** The profile id to generate with ('' when nothing is ready); the posted pick is only a request. */
+    private function resolveProfile(string $feature, int $projectId, mixed $pick): string
+    {
+        $pick = is_string($pick) && $pick !== '' ? $pick : null;
+        return $this->registry()->resolve($feature, $this->routingProject($projectId), $pick);
     }
 
     /**

@@ -13,8 +13,8 @@
         <?php if (! empty($report['ai'])): ?>
             <input type="hidden" name="include_ai_summary" value="1">
         <?php endif ?>
-        <?php if (! empty($report['profile_id'])): ?>
-            <input type="hidden" name="profile_id" value="<?= $this->text->e($report['profile_id']) ?>">
+        <?php if (! empty($report['ai_profile'])): ?>
+            <input type="hidden" name="ai_profile" value="<?= $this->text->e($report['ai_profile']) ?>">
         <?php endif ?>
 
         <ul class="tr-user-list">
